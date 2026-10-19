@@ -39,17 +39,24 @@ This is the part that always works. It compiles with no C++ toolchain at all.
 5. **Save** the plugin (`.esp`) into your mod's `data/` folder.
 
 > **Papyrus-only mode.** If you ship only the `.esp` (no `ERC.dll`), the DLL-fired
-> events never arrive, so the script falls back to Skyrim's native `OnDamage` event
+> events never arrive, so the script falls back to Skyrim's native `OnHit` event
 > for **stagger / hit-reaction animations** (the 4-tier flinch→knockdown system).
 > What it CANNOT do without the DLL: tap-to-dodge rolls, true i-frames, and hit-stop
 > (hit-stop needs a global timescale dip — `Utility.Wait` only freezes the player,
 > not the world). So Papyrus-only is a partial fallback / smoke-test, not the full
 > experience. The script detects this automatically: with no DLL it never calls a
-> native (which would throw) and runs the `OnDamage` path instead.
+> native (which would throw) and runs the `OnHit` path instead.
 
 ---
 
 ## Part B — The SKSE plugin (C++) → `ERC.dll`
+
+> **Read `docs/SKSE-API-NOTES.md` first.** A validation pass confirmed the C++
+> here is written against a *stand-in* API (a `SKSEPlugin` base class,
+> `CreateSKSEPlugin()`, `IWMCM`). It compiles cleanly with MSVC, but the official
+> SKSE plugin API uses `SKSEPlugin_Version` + `SKSEPlugin_Load` and has no
+> `Update()` or `IWMCM`. That document gives the exact mapping and the porting
+> steps. Do that port before you expect a working `.dll`.
 
 Requires: **SKSE SDK** for your Skyrim AE version, and a C++ compiler
 (MSVC via Visual Studio, or clang-cl). Get the matching SDK from the SKSE
@@ -159,6 +166,18 @@ If a VM call fails, the plugin logs it and continues — native behaviour
 crashes the game.
 
 ---
+
+## Validating without the full toolchain
+
+Two checks run without Creation Kit or the SKSE SDK:
+
+| Command | What it proves |
+|---|---|
+| `powershell -File tools\validate-psc.ps1 -Path data\scripts\source\ERC_PlayerCombat.psc` | Papyrus structure: no duplicate event/function names, balanced `Event`/`EndEvent` and `Function`/`EndFunction` blocks, and no known non-Skyrim API or C-style syntax. |
+| `plugin\validation\build-check.bat` | The C++ **compiles** (`cl /c`) against mock SKSE headers in `plugin\validation\mock-sdk\` — catching typos, type errors and missing symbols. Produces `.obj` only; no DLL, no link. |
+
+Neither replaces a real build: the Papyrus still needs compiling in CK, and the DLL
+still needs linking against the real SKSE SDK. They just catch errors early.
 
 ## Verifying the build
 

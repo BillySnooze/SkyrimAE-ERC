@@ -49,7 +49,8 @@ public:
 	// --- Roll / i-frame state -------------------------------------------------
 	void   OnRollStarted(float afDurationSeconds);
 	void   OnRollEnded();
-	bool   InIframeWindow() const { return _inIframe && (_gameTime < _iframeEndTime); }
+	// Defined in the .cpp (needs GetGameTime(), which is only available there).
+	bool   InIframeWindow() const;
 
 	// --- Hit-stop -------------------------------------------------------------
 	void   TriggerHitStop(float afSeconds);

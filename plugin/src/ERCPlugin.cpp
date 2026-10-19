@@ -24,6 +24,7 @@
 #include <BSUtility_Heap.h>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 // ----------------------------------------------------------------------------
@@ -42,10 +43,9 @@ extern "C" __declspec(dllexport) SKSEPlugin* CreateSKSEPlugin()
 // ----------------------------------------------------------------------------
 static void RegisterDefaults(std::map<std::string, std::string>& s)
 {
-	// Stamina costs (ER: roll 12, backstep 8, jump 10)
+	// Stamina cost (ER: a roll costs 12). Backstep/jump costs are intentionally not
+	// exposed: Skyrim has no backstep or jump-attack system for them to apply to.
 	s["RollStaminaCost"]     = "12";
-	s["BackstepStaminaCost"] = "8";
-	s["JumpStaminaCost"]     = "10";
 
 	// I-frames
 	s["IframeFraction"]      = "0.55";   // fraction of roll that is invincible
@@ -242,6 +242,11 @@ void ERCPlugin::OnRollStarted(float afDurationSeconds)
 	CallPapyrusFloat("ERC_RollStarted", afDurationSeconds);
 }
 
+bool ERCPlugin::InIframeWindow() const
+{
+	return _inIframe && (GetGameTime() < _iframeEndTime);
+}
+
 void ERCPlugin::OnRollEnded()
 {
 	_inIframe = false;
@@ -342,6 +347,12 @@ void ERCPlugin::SetFloat(const char* akKey, float afValue) { _settings[akKey] = 
 void ERCPlugin::SetInt  (const char* akKey, int32_t aiValue){ _settings[akKey] = std::to_string(aiValue); }
 void ERCPlugin::SetBool (const char* akKey, bool abValue)   { _settings[akKey] = abValue ? "1" : "0"; }
 void ERCPlugin::SetString(const char* akKey, const char* asValue){ _settings[akKey] = asValue; }
+
+// ----------------------------------------------------------------------------
+//  Path of the persisted settings file (defined below; declared here because
+//  LoadSettings/SaveSettings use it before the definition appears).
+// ----------------------------------------------------------------------------
+static std::string GetIniPath();
 
 // ----------------------------------------------------------------------------
 //  ini persistence: <SKSEPlugins>/EldenRingCombat.ini

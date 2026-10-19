@@ -42,8 +42,6 @@ void ERCMCM::Register()
 
 	int c;
 	c = AddSliderControl(pCombat, "Roll Stamina Cost",       0.0f, 50.0f, 1.0f);   _ctrls.push_back({pCombat, c, "RollStaminaCost",        true});
-	c = AddSliderControl(pCombat, "Backstep Stamina Cost",   0.0f, 50.0f, 1.0f);   _ctrls.push_back({pCombat, c, "BackstepStaminaCost",    true});
-	c = AddSliderControl(pCombat, "Jump Stamina Cost",       0.0f, 50.0f, 1.0f);   _ctrls.push_back({pCombat, c, "JumpStaminaCost",        true});
 	c = AddSliderControl(pCombat, "I-Frame Fraction",        0.0f, 1.0f,  0.05f);  _ctrls.push_back({pCombat, c, "IframeFraction",         true});
 	c = AddSliderControl(pCombat, "Hit-Stop Duration (s)",   0.0f, 0.3f,  0.01f);  _ctrls.push_back({pCombat, c, "HitStopSeconds",         true});
 	c = AddSliderControl(pCombat, "Hit-Stop Timescale",      0.05f,1.0f,   0.05f);  _ctrls.push_back({pCombat, c, "HitStopScale",           true});
@@ -102,8 +100,6 @@ void ERCMCM::OnInfoRequest(int aiPage, int aiControl)
 
 	static const struct { const char* key; const char* info; } kInfo[] = {
 		{"RollStaminaCost",        "Stamina spent when a dodge roll starts."},
-		{"BackstepStaminaCost",    "Stamina spent on a backstep."},
-		{"JumpStaminaCost",        "Stamina spent on a jump."},
 		{"IframeFraction",         "Fraction of the roll that is invincible (i-frames). 0.55 = first 55%."},
 		{"HitStopSeconds",         "How long the world freezes when a hit lands."},
 		{"HitStopScale",           "Timescale dip applied during hit-stop (lower = stronger freeze)."},

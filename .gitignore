@@ -6,10 +6,14 @@ data/**/*.esm
 *.lib
 *.pdb
 
+# Third-party SKSE runtime/SDK downloads (not part of this mod)
+skse64_*/
+
 # CMake / build trees
 build/
 cmake-build-*/
 out/
+plugin/validation/out/
 .vs/
 .idea/
 

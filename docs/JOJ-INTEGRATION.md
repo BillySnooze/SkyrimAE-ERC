@@ -55,7 +55,7 @@ open the BFCO plugin(s) and:
    Disable it for the player only. *(Do NOT disable enemy dodge records.)*
 2. **Player hit-reactions / stagger.** Find BFCO's player flinch/stagger/knockdown
    animations or the script that triggers them, and disable for the player. ERC now
-   owns these via its `OnDamage`/`ERC_PlayerGotHit` path.
+   owns these via its `OnHit`/`ERC_PlayerGotHit` path.
 3. **Leave everything else** (damage, enemy AI, movement, sprint) enabled.
 
 > If BFCO's player combat is driven by a single master script/form rather than many
@@ -91,7 +91,7 @@ input. See BUILD.md, "Wiring HOOK-1."
 
 Once running under `skse_loader.exe`, open the **Elden Ring Combat** MCM and tune:
 
-- **Combat page:** roll/backstep/jump stamina costs, i-frame fraction, hit-stop
+- **Combat page:** roll stamina cost, i-frame fraction, hit-stop
   duration + timescale, the three stagger thresholds, and the feature toggles.
 - **Movement page:** equip-load weight cuts, per-tier roll durations (heavier =
   longer/slower), sprint-hold threshold, lock-on rolls toggle.

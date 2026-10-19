@@ -21,21 +21,15 @@ scriptname ERC_PlayerCombat extends Actor hidden
 ;  one is running, every native exists. MarkPluginLoaded() syncs our cached
 ;  settings the first time a DLL event arrives. In Papyrus-only mode (no DLL) no
 ;  events fire, m_pluginLoaded stays false, and we never call a native (which
-;  would throw). The mod then degrades to stagger reactions + hit-stop only.
+;  would throw). The mod then degrades to stagger reactions only.
 ;
 ;  ATTACHMENT: The SKSE plugin (ERC.dll) attaches this script to the Player at
 ;  game start, so `self` IS the player. See docs/BUILD.md.
 ; ============================================================================
 
-import Game
-
 ; --- Cached settings (refreshed from the plugin on load and on MCM change) ---
 float m_rollStaminaCost      = 12.0   ; stamina a roll costs (ER default: 12)
-float m_backstepStaminaCost  = 8.0    ; stamina a backstep costs (ER: 8)
-float m_jumpStaminaCost      = 10.0   ; stamina a jump costs (ER: 10)
-float m_iframeFraction       = 0.55   ; fraction of the roll that is invincible
 float m_hitStopSeconds       = 0.06   ; how long hit-stop freezes the world
-float m_hitStopScale         = 0.15   ; timescale dip applied during hit-stop
 int   m_staggerFlinch        = 8      ; damage below this -> flinch
 int   m_staggerStagger       = 20     ; below this -> stagger
 int   m_staggerLarge         = 40     ; below this -> large stagger, else knockdown
@@ -77,33 +71,28 @@ bool   m_inIframeWindow       = false
 ;  LIFECYCLE
 ; ============================================================================
 
+event OnInit()
+	Initialize()
+endEvent
+
 event OnLoad()
-	; Only run on the player — the plugin attaches us to the Player, but guard
-	; against the script ever being placed on another actor.
-	if (self != Game.GetPlayer())
-		return
-	endif
-
-	m_initialized = true
-
-	; DLL presence is detected *reactively*: a native call is only ever made from
-	; inside an ERC_* event handler, and such an event can only be delivered by
-	; ERC.dll — so if we are executing one, every native exists. In Papyrus-only
-	; mode (no DLL) no events fire, m_pluginLoaded stays false, and we never call
-	; a native (which would throw). See MarkPluginLoaded() and docs/BUILD.md.
-	m_pluginLoaded = false
-
-	; We do NOT register for OnHit/OnDamage here: the SKSE plugin hooks player
-	; damage directly (it needs frame-accurate access to nullify i-frame hits)
-	; and forwards the relevant moments to us as ERC_* events. This keeps all
-	; timing in one place and avoids Papyrus event jitter.
+	Initialize()
 endEvent
 
 event OnActivate()
-	if (!m_initialized && self == Game.GetPlayer())
-		m_initialized = true
-	endif
+	Initialize()
 endEvent
+
+; Shared initialisation. Only ever acts on the Player. Deliberately does NOT
+; touch m_pluginLoaded: that is owned by the DLL (ERC_OnPluginAttached). Resetting
+; it here on every cell load would briefly re-enable the Papyrus fallback and
+; could double-react on a hit. See docs/BUILD.md.
+function Initialize()
+	if (self != Game.GetPlayer())
+		return
+	endif
+	m_initialized = true
+endFunction
 
 ; Called at the top of every DLL-fired event handler. The first time a DLL event
 ; arrives we know the plugin is present, so we sync our cached settings from it.
@@ -121,11 +110,7 @@ endFunction
 ; MarkPluginLoaded() / an ERC_* event, which prove the DLL (and its natives) exist.
 function RefreshSettings()
 	m_rollStaminaCost     = ERC_GetFloat("RollStaminaCost")
-	m_backstepStaminaCost = ERC_GetFloat("BackstepStaminaCost")
-	m_jumpStaminaCost     = ERC_GetFloat("JumpStaminaCost")
-	m_iframeFraction      = ERC_GetFloat("IframeFraction")
 	m_hitStopSeconds      = ERC_GetFloat("HitStopSeconds")
-	m_hitStopScale        = ERC_GetFloat("HitStopScale")
 	m_staggerFlinch       = ERC_GetInt("StaggerFlinchThreshold")
 	m_staggerStagger      = ERC_GetInt("StaggerStaggerThreshold")
 	m_staggerLarge        = ERC_GetInt("StaggerLargeThreshold")
@@ -152,9 +137,10 @@ function RefreshSettings()
 endFunction
 
 ; Pushed by the plugin the moment it attaches this script to the player. Sets
-; m_pluginLoaded immediately so the OnDamage fallback stands down from frame one
+; m_pluginLoaded immediately so the OnHit fallback stands down from frame one
 ; (no double-stagger race on early hits) and settings are synced up front.
 event ERC_OnPluginAttached()
+	m_initialized  = true
 	m_pluginLoaded = true
 	RefreshSettings()
 endEvent
@@ -193,7 +179,9 @@ event ERC_DodgeTap(int aiDirection)
 	float duration = RollDurationForTier(tier)
 
 	; Stamina gate: not enough stamina to roll -> do nothing (ER behaviour).
-	if (GetStamina() < m_rollStaminaCost)
+	; Skyrim's Actor has no GetStamina/SetStamina (those are Fallout 4 APIs); use
+	; the actor-value functions instead.
+	if (GetActorValue("Stamina") < m_rollStaminaCost)
 		return
 	endif
 
@@ -202,7 +190,7 @@ event ERC_DodgeTap(int aiDirection)
 	PlayRollAnimation(animName)
 
 	; Deduct stamina (Skyrim's own stamina pool — we only spend it).
-	SetStamina(GetStamina() - m_rollStaminaCost)
+	DamageActorValue("Stamina", m_rollStaminaCost)
 
 	; Open the i-frame window. The plugin uses `duration` and IframeFraction to
 	; nullify incoming physical damage for the invincible portion of the roll, and
@@ -225,23 +213,22 @@ endEvent
 ; provide that exact event name (nothing plays, no crash). Equip-load scaling is
 ; expressed through the per-tier *durations* (heavier = longer/slower roll), which
 ; also size the i-frame window — so we play at normal rate here.
+; NOTE: Actor.PlayAnimation is the real Skyrim API; there is no GetAnimationObject.
 function PlayRollAnimation(string animName)
 	if (animName == "")
 		return
 	endif
-	var anim = GetAnimationObject()
-	if (anim == none)
-		return
-	endif
-	anim.PlayAnimation(animName)
+	PlayAnimation(animName)
 endFunction
 
 ; Map equipped weapon + armour weight to an ER equip-load tier:
 ;   0 = light, 1 = medium, 2 = heavy.
-function GetEquipLoadTier(): int
+; NOTE: Papyrus puts the return type BEFORE the function keyword (there is no
+; `: type` suffix syntax — that is a different language's convention).
+int function GetEquipLoadTier()
 	float weight = 0.0
 
-	var weapon = GetEquippedWeapon()
+	Weapon weapon = GetEquippedWeapon()
 	if (weapon != none)
 		weight += weapon.GetWeight()
 	endif
@@ -258,7 +245,7 @@ function GetEquipLoadTier(): int
 	return 2
 endFunction
 
-function RollDurationForTier(int aiTier): float
+float function RollDurationForTier(int aiTier)
 	if (aiTier == 0)
 		return m_rollDurationLight
 	else
@@ -278,7 +265,7 @@ endFunction
 ; use the directional variant whenever aiDirection > 0, which preserves facing
 ; toward the target exactly like ELDEN RING's lock-on dodge. When not locked on
 ; (direction == front) we play the base roll.
-function RollAnimForTierAndDir(int aiTier, int aiDirection): string
+string function RollAnimForTierAndDir(int aiTier, int aiDirection)
 	string base
 	if (aiTier == 0)
 		base = m_rollLight
@@ -364,18 +351,14 @@ function PlayStaggerReaction(float afDamage, int aiDirection)
 		return
 	endif
 
-	var anim = GetAnimationObject()
-	if (anim == none)
-		return
-	endif
-	anim.PlayAnimation(animName)
+	PlayAnimation(animName)
 endFunction
 
 ; ============================================================================
 ;  PAPYRUS-ONLY FALLBACK  (stagger reactions with no DLL)
 ; ----------------------------------------------------------------------------
 ;  When ERC.dll is absent, the DLL-fired events above never arrive. To keep the
-;  .esp useful on its own, we fall back to Skyrim's native OnDamage event for
+;  .esp useful on its own, we fall back to Skyrim's native OnHit event for
 ;  stagger/hit-reaction animations. This is gated on !m_pluginLoaded so that when
 ;  the DLL IS present it owns damage handling (via ERC_PlayerGotHit) and we do NOT
 ;  double-react.
@@ -384,9 +367,13 @@ endFunction
 ;  i-frames, and hit-stop. Hit-stop in particular needs a global timescale dip —
 ;  Utility.Wait only freezes the player while the world runs at full speed, which
 ;  is not the ER effect. So this fallback provides stagger reactions alone.
+;
+;  NOTE: Skyrim has no OnDamage event (that is a Fallout 4 API); OnHit is the
+;  correct event. It carries no damage amount, so we approximate from the source
+;  weapon's base damage to choose a reaction tier.
 ; ============================================================================
 
-event OnDamage(SourceMod akSource, float afAmount)
+event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, bool abPowerAttack, bool abSneakAttack, bool abBashAttack, bool abHitBlocked)
 	if (!m_initialized || self != Game.GetPlayer())
 		return
 	endif
@@ -395,11 +382,20 @@ event OnDamage(SourceMod akSource, float afAmount)
 	if (m_pluginLoaded)
 		return
 	endif
-	if (afAmount <= 0.0 || !m_enableGuardBreak)
+	if (!m_enableGuardBreak || akSource == none)
 		return
 	endif
 
-	PlayStaggerReaction(afAmount, 0)
+	Weapon w = akSource as Weapon
+	float approxDamage = 0.0
+	if (w != none)
+		approxDamage = w.GetDamage()
+	endif
+	if (approxDamage <= 0.0)
+		return
+	endif
+
+	PlayStaggerReaction(approxDamage, 0)
 endEvent
 
 ; ============================================================================
@@ -413,21 +409,22 @@ endEvent
 ;  can only run if ERC.dll delivered the event (so every native exists). In Papyrus-
 ;  only mode no events fire, so no native is ever called and nothing throws.
 
-native float  ERC_GetFloat(string akKey)
-native int    ERC_GetInt(string akKey)
-native bool   ERC_GetBool(string akKey)
-native string ERC_GetString(string akKey)
-native void   ERC_SetFloat(string akKey, float afValue)
+;  native declarations use the form:  <ReturnType> Function <Name>(<params>) native
+;  (return type first, `native` last). `Function` with no return type = void.
 
-; Called by the plugin right after it attaches this script to the player.
-native void   ERC_OnPluginAttached()
+float  function ERC_GetFloat(string akKey) native
+int    function ERC_GetInt(string akKey) native
+bool   function ERC_GetBool(string akKey) native
+string function ERC_GetString(string akKey) native
+function ERC_SetFloat(string akKey, float afValue) native
 
 ; Tell the plugin a roll of `afDuration` seconds has begun (open i-frames).
-native void   ERC_RollStarted(float afDurationSeconds)
-; Tell the plugin the roll has ended (close i-frames).
-native void   ERC_RollEnded()
+; NOTE: ERC_RollEnded and ERC_OnPluginAttached are EVENTS (declared above) that the
+; plugin calls — they must NOT also be declared native here, or the script fails to
+; compile with a duplicate-name error.
+function ERC_RollStarted(float afDurationSeconds) native
 
 ; Dip global timescale to HitStopScale for `afSeconds`, then auto-restore.
-native void   ERC_TriggerHitStop(float afSeconds)
-native float  ERC_GetTimeScale()
-native void   ERC_SetTimeScale(float afValue)
+function ERC_TriggerHitStop(float afSeconds) native
+float  function ERC_GetTimeScale() native
+function ERC_SetTimeScale(float afValue) native

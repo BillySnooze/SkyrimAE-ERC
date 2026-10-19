@@ -73,9 +73,13 @@ EldenRingCombat/
 │  └─ SKSEPlugins/                ← drop the built ERC.dll here at runtime
 ├─ plugin/                        ← C++ source of ERC.dll
 │  ├─ include/  (ERCPlugin.h, ERCMCM.h, ERCNatives.h)
-│  └─ src/      (ERCPlugin.cpp, ERCMCM.cpp, ERCNatives.cpp)
+│  ├─ src/      (ERCPlugin.cpp, ERCMCM.cpp, ERCNatives.cpp)
+│  └─ validation/                 ← mock SDK + build-check.bat (offline compile check)
+├─ tools/
+│  └─ validate-psc.ps1            ← Papyrus structural validator
 └─ docs/
    ├─ BUILD.md                     ← CK + SKSE SDK build steps
+   ├─ SKSE-API-NOTES.md            ← porting the C++ to the real SKSE plugin API
    └─ JOJ-INTEGRATION.md           ← how it replaces BFCO player combat in JOJ
 ```
 
@@ -83,19 +87,25 @@ EldenRingCombat/
 
 This repository contains **source code and documentation**, not prebuilt binaries:
 
-- ✅ **Complete & ready to compile:** the Papyrus script (`ERC_PlayerCombat.psc`) —
-  written against real, safe Skyrim APIs; compiles in CK.
-- ✅ **Complete logic, needs your SDK to build:** the C++ plugin. All combat logic
-  (settings store, MCM menu, i-frame window math, hit-stop, tap detection) is fully
-  implemented. Two small parts are marked `[HOOK-1]` / `[HOOK-2]` / `[VERSION-SPECIFIC]`
-  because they depend on the exact symbols in *your* SKSE SDK version — you wire those
-  against your own SDK (each is isolated and documented in `docs/BUILD.md`). I could not
-  compile the `.dll` here because no SKSE SDK is installed in this environment.
-- ✅ **Documentation:** build steps, JOJ integration guide, and a conflict checklist.
+- ✅ **Compiles cleanly (validated):** the C++ plugin sources build with MSVC
+  (`cl /c`, C++17) against the stand-in SKSE headers in
+  `plugin/validation/mock-sdk/` — run `plugin/validation/build-check.bat`.
+  This proves syntax and type correctness.
+- ⚠️ **Not yet a real plugin:** that stand-in API is **not** the official SKSE
+  plugin API. The port (`SKSEPlugin_Version`/`SKSEPlugin_Load`, Papyrus native
+  registration, MCM Helper instead of `IWMCM`) is specified step-by-step in
+  `docs/SKSE-API-NOTES.md`. Do it before expecting a loadable `.dll`.
+- ✅ **Structurally validated:** the Papyrus script passes
+  `tools/validate-psc.ps1` (no duplicate names, balanced blocks, no non-Skyrim APIs).
+  It has **not** been compiled in Creation Kit — no CK is installed here.
+- ✅ **Complete logic, needs your SDK to build:** all combat logic
+  (settings store, i-frame window math, hit-stop, tap detection) is implemented.
+  Three parts are marked (`[HOOK-1]`, `[HOOK-2]`, `[VERSION-SPECIFIC]`) because they
+  depend on *your* SKSE SDK and game version.
+- ✅ **Documentation:** build steps, JOJ integration guide, API notes, conflict checklist.
 
-So: you get a complete, well-documented mod to finish building against your own toolchain —
-not a drop-in prebuilt `.esp`/`.dll`. If you'd like, I can walk through the CK compile or
-the SKSE SDK build step-by-step once you have those tools set up.
+So: you get a complete, validated, well-documented mod to finish building against
+your own toolchain — not a drop-in prebuilt `.esp`/`.dll`.
 
 ## Credits & license
 

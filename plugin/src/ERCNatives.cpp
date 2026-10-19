@@ -1,107 +1,106 @@
 // ============================================================================
-//  ERCNatives.cpp — Papyrus native function implementations + VM registration
+//  ERCNatives.cpp — Papyrus natives registered on class "ERC_PlayerCombat"
 // ----------------------------------------------------------------------------
-//  The bodies are simple forwards to ERCPlugin and are version-independent.
-//  RegisterNatives() is the one SDK-sensitive part: the exact AddFunction call
-//  form depends on your SKSE/BSScript version. A typical modern-SDK pattern is
-//  shown; adjust the argument-type tokens if yours differ. See docs/BUILD.md.
+//  Standard SKSE registration pattern (PapyrusNativeFunctions.h):
+//    registry->RegisterFunction(new NativeFunctionN<Parent, Ret, Args...>(
+//        "PapyrusName", "ClassName", CppFunction, registry));
+//  The registry takes ownership of the function object.
 // ============================================================================
-
-#include "ERCNatives.h"
 #include "ERCPlugin.h"
+#include "erc_compat.h"
 
-#include <SKSE.h>
-#include <BSScript_VMState.h>
+#include "skse64/PapyrusNativeFunctions.h"
+#include "skse64/PapyrusVM.h"
 
-namespace erc_natives
+namespace
 {
-	// We need a pointer to the live plugin instance inside each native body.
-	// The cleanest way is a file-scope pointer set in RegisterNatives().
-	static ERCPlugin* g_plugin = nullptr;
-
-	float GetFloat(BSStackFrame*, const char* akKey)
+	// --- settings ---------------------------------------------------------
+	float GetFloatNative(StaticFunctionTag*, BSFixedString akKey)
 	{
-		return g_plugin ? g_plugin->GetFloat(akKey) : 0.0f;
+		return ERCPlugin::Get().GetFloat(akKey.c_str());
 	}
 
-	int32_t GetInt(BSStackFrame*, const char* akKey)
+	int GetIntNative(StaticFunctionTag*, BSFixedString akKey)
 	{
-		return g_plugin ? g_plugin->GetInt(akKey) : 0;
+		return ERCPlugin::Get().GetInt(akKey.c_str());
 	}
 
-	bool GetBool(BSStackFrame*, const char* akKey)
+	bool GetBoolNative(StaticFunctionTag*, BSFixedString akKey)
 	{
-		return g_plugin ? g_plugin->GetBool(akKey) : false;
+		return ERCPlugin::Get().GetBool(akKey.c_str());
 	}
 
-	const char* GetString(BSStackFrame*, const char* akKey)
+	BSFixedString GetStringNative(StaticFunctionTag*, BSFixedString akKey)
 	{
-		static thread_local std::string buf;   // stable storage for the returned C-string
-		if (!g_plugin) return "";
-		buf = g_plugin->GetString(akKey);
-		return buf.c_str();
+		const std::string value = ERCPlugin::Get().GetString(akKey.c_str());
+		return BSFixedString(value.c_str());
 	}
 
-	void SetFloat(BSStackFrame*, const char* akKey, float afValue)
+	void SetFloatNative(StaticFunctionTag*, BSFixedString akKey, float afValue)
 	{
-		if (g_plugin) { g_plugin->SetFloat(akKey, afValue); g_plugin->SaveSettings(); }
+		ERCPlugin::Get().SetFloat(akKey.c_str(), afValue);
 	}
 
-	void OnPluginAttached(BSStackFrame*)
+	// --- dodge taps (Papyrus polls this) ----------------------------------
+	int ConsumeDodgeTapNative(StaticFunctionTag*)
 	{
-		if (g_plugin) g_plugin->CallPapyrusNoArgs("ERC_OnPluginAttached");
+		return ERCPlugin::Get().ConsumeDodgeTap();
 	}
 
-	void RollStarted(BSStackFrame*, float afDurationSeconds)
+	// --- i-frames / hit-stop ----------------------------------------------
+	void RollStartedNative(StaticFunctionTag*, float afDurationSeconds)
 	{
-		if (g_plugin) g_plugin->OnRollStarted(afDurationSeconds);
+		ERCPlugin::Get().OnRollStarted(afDurationSeconds);
 	}
 
-	void RollEnded(BSStackFrame*)
+	void TriggerHitStopNative(StaticFunctionTag*, float afSeconds)
 	{
-		if (g_plugin) g_plugin->OnRollEnded();
+		ERCPlugin::Get().TriggerHitStop(afSeconds);
 	}
 
-	void TriggerHitStop(BSStackFrame*, float afSeconds)
+	float GetTimeScaleNative(StaticFunctionTag*)
 	{
-		if (g_plugin) g_plugin->TriggerHitStop(afSeconds);
+		// [HOOK-2] read the game's live timescale where available.
+		return 1.0f;
 	}
 
-	float GetTimeScale(BSStackFrame*)
+	void SetTimeScaleNative(StaticFunctionTag*, float afValue)
 	{
-		return GetGameSettingFloat("fTimeScale");   // SKSE free function
+		// [HOOK-2] write the game's timescale where available.
+		(void)afValue;
+	}
+}
+
+bool ERCRegisterNatives(VMClassRegistry* registry)
+{
+	if (!registry)
+	{
+		return false;
 	}
 
-	void SetTimeScale(BSStackFrame*, float afValue)
-	{
-		SetGameSettingFloat("fTimeScale", afValue);  // SKSE free function
-	}
+	const char* cls = "ERC_PlayerCombat";
 
-	// ------------------------------------------------------------------------
-	//  RegisterNatives — wire every native into the Papyrus VM.
-	// ------------------------------------------------------------------------
-	void RegisterNatives(ERCPlugin* a_plugin)
-	{
-		g_plugin = a_plugin;
-		if (!a_plugin || !GetSKSE()->papyrusVM) return;
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, float, BSFixedString>(
+		"ERC_GetFloat", cls, GetFloatNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, int, BSFixedString>(
+		"ERC_GetInt", cls, GetIntNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, bool, BSFixedString>(
+		"ERC_GetBool", cls, GetBoolNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, BSFixedString, BSFixedString>(
+		"ERC_GetString", cls, GetStringNative, registry));
+	registry->RegisterFunction(new NativeFunction2<StaticFunctionTag, void, BSFixedString, float>(
+		"ERC_SetFloat", cls, SetFloatNative, registry));
 
-		auto* vm = GetSKSE()->papyrusVM;
+	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, int>(
+		"ERC_ConsumeDodgeTap", cls, ConsumeDodgeTapNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
+		"ERC_RollStarted", cls, RollStartedNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
+		"ERC_TriggerHitStop", cls, TriggerHitStopNative, registry));
+	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, float>(
+		"ERC_GetTimeScale", cls, GetTimeScaleNative, registry));
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
+		"ERC_SetTimeScale", cls, SetTimeScaleNative, registry));
 
-		// [VERSION-SPECIFIC] The AddFunction signature below follows the common
-		// modern SKSE SDK form:  AddFunction(name, argCount, funcPtr, retType).
-		// Argument/return type tokens (kBSSType_*) come from <BSScript_Type.h>.
-		// If your SDK uses a different overload, adjust ONLY these calls.
-
-		vm->AddFunction("ERC_GetFloat",        1, &GetFloat,       kBSSType_Float);
-		vm->AddFunction("ERC_GetInt",          1, &GetInt,         kBSSType_Int32);
-		vm->AddFunction("ERC_GetBool",         1, &GetBool,        kBSSType_Bool);
-		vm->AddFunction("ERC_GetString",       1, &GetString,      kBSSType_String);
-		vm->AddFunction("ERC_SetFloat",        2, &SetFloat,       kBSSType_Void);
-		vm->AddFunction("ERC_OnPluginAttached",0, &OnPluginAttached,kBSSType_Void);
-		vm->AddFunction("ERC_RollStarted",     1, &RollStarted,    kBSSType_Void);
-		vm->AddFunction("ERC_RollEnded",       0, &RollEnded,      kBSSType_Void);
-		vm->AddFunction("ERC_TriggerHitStop",  1, &TriggerHitStop, kBSSType_Void);
-		vm->AddFunction("ERC_GetTimeScale",    0, &GetTimeScale,   kBSSType_Float);
-		vm->AddFunction("ERC_SetTimeScale",    1, &SetTimeScale,   kBSSType_Void);
-	}
+	return true;
 }

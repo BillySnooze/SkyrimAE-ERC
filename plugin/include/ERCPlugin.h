@@ -1,94 +1,69 @@
 // ============================================================================
-//  ERCPlugin.h — ELDEN RING COMBAT SKSE plugin
+//  ERCPlugin.h — Elden Ring Combat SKSE plugin core
 // ----------------------------------------------------------------------------
-//  A small, standard-shaped SKSE plugin. It owns:
-//    - The tunable settings store (single source of truth for the MCM + Papyrus)
-//    - Per-frame dodge-button tap detection (tap = roll, hold = sprint)
-//    - The i-frame invincibility window during rolls (nullifies physical hits)
-//    - Hit-stop (global timescale dip on impact)
-//    - The MCM menu (IWMCM) exposing every tunable as a slider/toggle
+//  Written against the OFFICIAL SKSE 2.x plugin API (PluginAPI.h):
+//    * entry points live in ERCMain.cpp (SKSEPlugin_Version / SKSEPlugin_Load)
+//    * Papyrus natives are registered in ERCNatives.cpp
+//    * this class owns settings, the i-frame window, hit-stop and the dodge-tap
+//      queue drained by Papyrus polling
 //
-//  All combat *logic* that benefits from script-level access to game objects
-//  (stagger-reaction selection, equip-load tiers) lives in Papyrus and is called
-//  through BSScript; where a native call would be more reliable the plugin does
-//  it directly. See docs/BUILD.md for compile instructions.
+//  Transport to Papyrus is POLLING, not event push: the official plugin API has
+//  no simple "raise a Papyrus event" call, so Papyrus calls ERC_ConsumeDodgeTap()
+//  on a short update loop instead. This keeps the plugin free of BSScript/VM
+//  internals. See docs/SKSE-API-NOTES.md.
 // ============================================================================
-
 #pragma once
 
-#include <SKSEPlugin.h>
-#include <IWMCM.h>
 #include <map>
 #include <string>
-#include <cstdint>
 
-class ERCMCM; // forward decl (defined in ERCMCM.h)
+struct SKSEInterface;
 
-class ERCPlugin : public SKSEPlugin
+class ERCPlugin
 {
 public:
-	// --- SKSEPlugin interface -------------------------------------------------
-	bool Init(SKSEInterface* a_skse) override;
-	void Update(float afGameTime) override;          // called once per frame by the game
-	void OnGameLoaded() override;                    // safe point to hook player functions
+	static ERCPlugin& Get();
 
-	// --- Settings store (single source of truth) ------------------------------
-	float  GetFloat(const char* akKey);
-	int32_t GetInt(const char* akKey);
-	bool   GetBool(const char* akKey);
-	std::string GetString(const char* akKey);
-	void   SetFloat(const char* akKey, float afValue);
-	void   SetInt(const char* akKey, int32_t aiValue);
-	void   SetBool(const char* akKey, bool abValue);
-	void   SetString(const char* akKey, const char* asValue);
+	// Called from SKSEPlugin_Load. Registers Papyrus natives + messaging.
+	bool Init(const SKSEInterface* skse);
 
-	// Load/save the store to <SKSEPlugins>/EldenRingCombat.ini
-	bool   LoadSettings();
-	bool   SaveSettings() const;
+	// --- settings (Data/SKSE/Plugins/EldenRingCombat.ini and MCM Helper ini) --
+	void LoadSettings();
+	float       GetFloat(const std::string& key) const;
+	int         GetInt(const std::string& key) const;
+	bool        GetBool(const std::string& key) const;
+	std::string GetString(const std::string& key) const;
+	void        SetFloat(const std::string& key, float value);
 
-	// --- Roll / i-frame state -------------------------------------------------
-	void   OnRollStarted(float afDurationSeconds);
-	void   OnRollEnded();
-	// Defined in the .cpp (needs GetGameTime(), which is only available there).
-	bool   InIframeWindow() const;
+	// --- dodge taps -----------------------------------------------------------
+	// Filled by the input hook ([HOOK-1]); drained by Papyrus polling.
+	void QueueDodgeTap(int direction);   // 0 front, 1 back, 2 left, 3 right
+	int  ConsumeDodgeTap();              // -1 when nothing pending
 
-	// --- Hit-stop -------------------------------------------------------------
-	void   TriggerHitStop(float afSeconds);
+	// --- i-frames -------------------------------------------------------------
+	void OnRollStarted(float durationSeconds);
+	void OnRollEnded();
+	bool InIframeWindow() const;
 
-	// --- Papyrus bridge (non-fatal; falls back to native behaviour) -----------
-	void   CallPapyrusNoArgs(const char* akFunction);
-	void   CallPapyrusFloat(const char* akFunction, float afArg0);
-	void   CallPapyrusFloatInt(const char* akFunction, float afArg0, int32_t aiArg1);
+	// --- hit-stop -------------------------------------------------------------
+	void TriggerHitStop(float seconds);
+
+	// Called once per frame from the game update hook ([HOOK-1]), if installed.
+	void Update();
+
+	static double Now();
 
 private:
-	SKSEInterface* _skse = nullptr;
-	ERCMCM*        _mcm  = nullptr;
+	ERCPlugin() = default;
 
-	// Settings store: key -> value as a string (parsed per accessor). Strings are
-	// used uniformly so the ini file is trivially human-editable.
 	std::map<std::string, std::string> _settings;
 
-	// --- Per-frame input state ------------------------------------------------
-	bool   _dodgeWasDown = false;
-	int32_t _dodgeHeldFrames = 0;
+	bool  _inIframe      = false;
+	double _iframeEndTime = 0.0;
 
-	// --- i-frame window -------------------------------------------------------
-	bool   _inIframe = false;
-	float  _iframeEndTime = 0.0f;   // game time (seconds) at which the window closes
+	bool  _hitStopActive  = false;
+	double _hitStopEndTime = 0.0;
+	float _savedTimeScale = 1.0f;
 
-	// --- Hit-stop -------------------------------------------------------------
-	bool   _hitStopActive = false;
-	float  _hitStopEnd = 0.0f;
-	float  _savedTimeScale = 1.0f;
-
-	// Set in OnGameLoaded after AttachScript; consumed by Update() one frame later
-	// to fire ERC_OnPluginAttached once the script is resolvable in the VM.
-	bool   _attachPending = false;
-
-	void DetectDodgeTap(float afGameTime);
-	void UpdateIframeWindow(float afGameTime);
-	void UpdateHitStop(float afGameTime);
+	int   _pendingDodgeTap = -1;
 };
-
-// The one exported symbol SKSE looks for.
-extern "C" __declspec(dllexport) SKSEPlugin* CreateSKSEPlugin();

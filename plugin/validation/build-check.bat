@@ -26,7 +26,7 @@ if not exist "validation\out" mkdir "validation\out"
 
 echo [check] Compiling ERC sources against mock SDK...
 cl /nologo /std:c++17 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /c /I include /I validation\mock-sdk ^
-   src\ERCPlugin.cpp src\ERCMCM.cpp src\ERCNatives.cpp /Fo:validation\out\
+   src\ERCPlugin.cpp src\ERCNatives.cpp src\ERCMain.cpp /Fo:validation\out\
 
 if errorlevel 1 (
     echo [check] COMPILE FAILED

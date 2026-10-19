@@ -2,229 +2,181 @@ scriptname ERC_PlayerCombat extends Actor hidden
 ; ============================================================================
 ;  ELDEN RING COMBAT (ERC) — Player Combat Feel
 ; ----------------------------------------------------------------------------
-;  Translates the *feel* of ELDEN RING player combat into Skyrim AE:
+;  Translates the *feel* of ELDEN RING player combat into Skyrim AE (1.6.1170):
 ;    - Tap-to-dodge rolls with invincibility frames (i-frames)
 ;    - Equip-load-scaled roll speed (light / medium / heavy)
-;    - Hit-stop on impact (both attacker and target freeze briefly)
+;    - Hit-stop on impact (handled natively by ERC.dll)
 ;    - Guard break + 4-tier hit reactions (flinch -> knockdown)
 ;    - Lock-on-aware rolls that preserve facing toward the target
 ;
-;  DAMAGE IS UNTOUCHED. This mod never changes weapon damage, scaling, or any
-;  of Skyrim's existing combat numbers — it only reshapes timing, movement and
-;  reactions. All tunable values (stamina costs, i-frame length, hit-stop time,
-;  stagger thresholds, animation names) live in the SKSE plugin and are exposed
-;  as MCM sliders. This script reads them through ERC_GetFloat / ERC_GetInt /
-;  ERC_GetBool.
+;  DAMAGE IS UNTOUCHED. This mod never changes weapon damage, scaling, or any of
+;  Skyrim's combat numbers — it only reshapes timing, movement and reactions.
 ;
-;  DLL DETECTION (reactive): A native call is only ever made from inside an
-;  ERC_* event handler, and such events can ONLY be delivered by ERC.dll — so if
-;  one is running, every native exists. MarkPluginLoaded() syncs our cached
-;  settings the first time a DLL event arrives. In Papyrus-only mode (no DLL) no
-;  events fire, m_pluginLoaded stays false, and we never call a native (which
-;  would throw). The mod then degrades to stagger reactions only.
+;  REQUIRES ERC.dll (i-frames, hit-stop). Dodge *input* is detected here in
+;  Papyrus by polling the dodge key, so rolls work without a version-specific
+;  C++ input hook; the script only calls into the plugin for the i-frame window.
 ;
-;  ATTACHMENT: The SKSE plugin (ERC.dll) attaches this script to the Player at
-;  game start, so `self` IS the player. See docs/BUILD.md.
+;  Why polling: the official SKSE plugin API has no simple "raise a Papyrus
+;  event" call (that needs BSScript/VM internals), so Papyrus drives the timing.
+;  See docs/SKSE-API-NOTES.md.
 ; ============================================================================
 
-; --- Cached settings (refreshed from the plugin on load and on MCM change) ---
-float m_rollStaminaCost      = 12.0   ; stamina a roll costs (ER default: 12)
-float m_hitStopSeconds       = 0.06   ; how long hit-stop freezes the world
-int   m_staggerFlinch        = 8      ; damage below this -> flinch
-int   m_staggerStagger       = 20     ; below this -> stagger
-int   m_staggerLarge         = 40     ; below this -> large stagger, else knockdown
-bool  m_enableRolls          = true
-bool  m_enableHitStop        = true
-bool  m_enableGuardBreak     = true
-bool  m_enableLockOnRolls    = true
+; --- Cached settings (mirrors of the plugin's values) -----------------------
+float m_rollStaminaCost   = 12.0
+float m_hitStopSeconds    = 0.06
+int   m_staggerFlinch     = 8
+int   m_staggerStagger    = 20
+int   m_staggerLarge      = 40
+bool  m_enableRolls       = true
+bool  m_enableHitStop     = true
+bool  m_enableGuardBreak  = true
+bool  m_enableLockOnRolls = true
 
-; Reaction animation event names. Defaults target the BFCO / For Honor moveset
-; animations that JOJ already ships; override via MCM if your moveset differs.
-string m_animFlinch          = "HitReaction_Flinch"
-string m_animStagger         = "HitReaction_Stagger"
-string m_animLargeStagger    = "HitReaction_LargeStagger"
-string m_animKnockdown       = "HitReaction_Knockdown"
+string m_animFlinch       = "HitReaction_Flinch"
+string m_animStagger      = "HitReaction_Stagger"
+string m_animLargeStagger = "HitReaction_LargeStagger"
+string m_animKnockdown    = "HitReaction_Knockdown"
 
-; Roll animation event names per equip-load tier (front variant). Directional
-; variants are derived by suffix. Override via MCM to match your moveset.
-string m_rollLight           = "ERC_Roll_Light_Front"
-string m_rollMedium          = "ERC_Roll_Medium_Front"
-string m_rollHeavy           = "ERC_Roll_Heavy_Front"
+string m_rollLight        = "ERC_Roll_Light_Front"
+string m_rollMedium       = "ERC_Roll_Medium_Front"
+string m_rollHeavy        = "ERC_Roll_Heavy_Front"
 
-; Roll duration (seconds) per tier, used to size the i-frame window.
-float m_rollDurationLight    = 0.62
-float m_rollDurationMedium   = 0.78
-float m_rollDurationHeavy    = 1.05
+float m_rollDurationLight  = 0.62
+float m_rollDurationMedium = 0.78
+float m_rollDurationHeavy  = 1.05
 
-; Equip-load weight thresholds — cached so per-event code never calls a native
-; getter (which throws when the DLL is absent).
-float m_equipLoadLightCut    = 12.0
-float m_equipLoadMediumCut   = 30.0
+float m_equipLoadLightCut  = 12.0
+float m_equipLoadMediumCut = 30.0
+
+; Dodge input. Default is Left Alt (scan code 56): tap to roll, hold to sprint —
+; the tap/hold split is what distinguishes a roll from Skyrim's native sprint.
+; Keyboard only (Papyrus Input has no gamepad query); controller users need the
+; DLL input hook ([HOOK-1] in docs/BUILD.md).
+int   m_dodgeKeyCode      = 56
+float m_sprintHoldSeconds = 0.25
 
 ; --- Internal state ---------------------------------------------------------
-bool   m_initialized          = false
-bool   m_pluginLoaded         = false    ; true when ERC.dll provides the natives
-int    m_currentRollTier      = -1     ; tier of the roll currently in progress
-bool   m_inIframeWindow       = false
+bool  m_midRoll     = false
+float m_rollEndTime = 0.0
+bool  m_keyWasDown  = false
+float m_keyDownTime = 0.0
+
+; How often we poll the dodge key (seconds). Small enough to catch a tap,
+; large enough to keep Papyrus cost negligible.
+float UPDATE_INTERVAL = 0.03
 
 ; ============================================================================
 ;  LIFECYCLE
 ; ============================================================================
 
 event OnInit()
-	Initialize()
-endEvent
-
-event OnLoad()
-	Initialize()
-endEvent
-
-event OnActivate()
-	Initialize()
-endEvent
-
-; Shared initialisation. Only ever acts on the Player. Deliberately does NOT
-; touch m_pluginLoaded: that is owned by the DLL (ERC_OnPluginAttached). Resetting
-; it here on every cell load would briefly re-enable the Papyrus fallback and
-; could double-react on a hit. See docs/BUILD.md.
-function Initialize()
+	; The plugin attaches this script to the Player, but guard anyway.
 	if (self != Game.GetPlayer())
 		return
 	endif
-	m_initialized = true
-endFunction
+	RefreshSettings()
+	RegisterForSingleUpdate(UPDATE_INTERVAL)
+endEvent
 
-; Called at the top of every DLL-fired event handler. The first time a DLL event
-; arrives we know the plugin is present, so we sync our cached settings from it.
-; Safe to call natives here: an ERC_* event can only be running if ERC.dll loaded.
-function MarkPluginLoaded()
-	if (!m_pluginLoaded)
-		m_pluginLoaded = true
-		RefreshSettings()
+event OnUpdate()
+	if (self != Game.GetPlayer())
+		return
 	endif
-endFunction
 
-; Re-read every tunable from the plugin. Called on load and whenever the MCM
-; changes a value (the plugin pushes ERC_SettingsChanged). Only valid when the
-; DLL is present — native calls throw otherwise, so this is always reached via
-; MarkPluginLoaded() / an ERC_* event, which prove the DLL (and its natives) exist.
+	PollDodgeTap()
+
+	if (m_midRoll && Utility.GetCurrentRealTime() >= m_rollEndTime)
+		m_midRoll = false
+	endif
+
+	RegisterForSingleUpdate(UPDATE_INTERVAL)
+endEvent
+
+; Read every tunable from the plugin (which merges its ini and MCM Helper's).
 function RefreshSettings()
-	m_rollStaminaCost     = ERC_GetFloat("RollStaminaCost")
-	m_hitStopSeconds      = ERC_GetFloat("HitStopSeconds")
-	m_staggerFlinch       = ERC_GetInt("StaggerFlinchThreshold")
-	m_staggerStagger      = ERC_GetInt("StaggerStaggerThreshold")
-	m_staggerLarge        = ERC_GetInt("StaggerLargeThreshold")
-	m_enableRolls         = ERC_GetBool("EnableRolls")
-	m_enableHitStop       = ERC_GetBool("EnableHitStop")
-	m_enableGuardBreak    = ERC_GetBool("EnableGuardBreak")
-	m_enableLockOnRolls   = ERC_GetBool("EnableLockOnRolls")
+	m_rollStaminaCost   = ERC_GetFloat("RollStaminaCost")
+	m_hitStopSeconds    = ERC_GetFloat("HitStopSeconds")
 
-	m_animFlinch          = ERC_GetString("AnimFlinch")
-	m_animStagger         = ERC_GetString("AnimStagger")
-	m_animLargeStagger    = ERC_GetString("AnimLargeStagger")
-	m_animKnockdown       = ERC_GetString("AnimKnockdown")
+	m_staggerFlinch     = ERC_GetInt("StaggerFlinchThreshold")
+	m_staggerStagger    = ERC_GetInt("StaggerStaggerThreshold")
+	m_staggerLarge      = ERC_GetInt("StaggerLargeThreshold")
 
-	m_rollLight           = ERC_GetString("RollLightFront")
-	m_rollMedium          = ERC_GetString("RollMediumFront")
-	m_rollHeavy           = ERC_GetString("RollHeavyFront")
+	m_enableRolls       = ERC_GetBool("EnableRolls")
+	m_enableHitStop     = ERC_GetBool("EnableHitStop")
+	m_enableGuardBreak  = ERC_GetBool("EnableGuardBreak")
+	m_enableLockOnRolls = ERC_GetBool("EnableLockOnRolls")
 
-	m_rollDurationLight   = ERC_GetFloat("RollDurationLight")
-	m_rollDurationMedium  = ERC_GetFloat("RollDurationMedium")
-	m_rollDurationHeavy   = ERC_GetFloat("RollDurationHeavy")
+	m_animFlinch        = ERC_GetString("AnimFlinch")
+	m_animStagger       = ERC_GetString("AnimStagger")
+	m_animLargeStagger  = ERC_GetString("AnimLargeStagger")
+	m_animKnockdown     = ERC_GetString("AnimKnockdown")
 
-	m_equipLoadLightCut   = ERC_GetFloat("EquipLoadLightCut")
-	m_equipLoadMediumCut  = ERC_GetFloat("EquipLoadMediumCut")
+	m_rollLight         = ERC_GetString("RollLightFront")
+	m_rollMedium        = ERC_GetString("RollMediumFront")
+	m_rollHeavy         = ERC_GetString("RollHeavyFront")
+
+	m_rollDurationLight  = ERC_GetFloat("RollDurationLight")
+	m_rollDurationMedium = ERC_GetFloat("RollDurationMedium")
+	m_rollDurationHeavy  = ERC_GetFloat("RollDurationHeavy")
+
+	m_equipLoadLightCut  = ERC_GetFloat("EquipLoadLightCut")
+	m_equipLoadMediumCut = ERC_GetFloat("EquipLoadMediumCut")
+
+	m_dodgeKeyCode      = ERC_GetInt("DodgeKeyCode")
+	m_sprintHoldSeconds = ERC_GetFloat("SprintHoldSeconds")
 endFunction
 
-; Pushed by the plugin the moment it attaches this script to the player. Sets
-; m_pluginLoaded immediately so the OnHit fallback stands down from frame one
-; (no double-stagger race on early hits) and settings are synced up front.
-event ERC_OnPluginAttached()
-	m_initialized  = true
-	m_pluginLoaded = true
-	RefreshSettings()
-endEvent
-
-; Pushed by the plugin whenever an MCM slider/toggle changes. The fact that this
-; event is running proves the DLL (and its natives) are present, so it's safe to
-; read settings here.
-event ERC_SettingsChanged()
-	MarkPluginLoaded()
-	RefreshSettings()
-endEvent
-
 ; ============================================================================
-;  DODGE ROLLS (tap-to-roll, i-frames, equip-load speed)
+;  DODGE ROLLS
 ; ============================================================================
 
-; Fired by the SKSE plugin every frame it detects a *tap* of the dodge button
-; (released after fewer than SprintHoldFrames). Holding past that threshold is
-; a sprint and never fires this event. `aiDirection` encodes roll direction:
-;   0 = front, 1 = back, 2 = left, 3 = right  (relative to facing / lock-on)
-event ERC_DodgeTap(int aiDirection)
-	if (!m_initialized || self != Game.GetPlayer())
-		return
+; Tap detection in Papyrus: poll the dodge key and split tap (roll) from hold
+; (sprint). This means dodge rolls work with no version-specific input hook.
+; Directional (lock-on) rolls need the target's bearing, which Papyrus cannot
+; read without TDM — so rolls default to the front variant. The DLL's
+; ERC_ConsumeDodgeTap() API exists for a future input hook that can supply it.
+function PollDodgeTap()
+	bool  down = Input.IsKeyPressed(m_dodgeKeyCode)
+	float now  = Utility.GetCurrentRealTime()
+
+	if (down && !m_keyWasDown)
+		m_keyDownTime = now            ; key went down
+	else
+		if (!down && m_keyWasDown)
+			; Key released: a short press is a dodge tap; a long hold was a sprint.
+			if ((now - m_keyDownTime) < m_sprintHoldSeconds)
+				DoRoll(0)
+			endif
+		endif
 	endif
-	MarkPluginLoaded()   ; this event proves the DLL is present -> sync settings
-	if (!m_enableRolls)
+
+	m_keyWasDown = down
+endFunction
+
+function DoRoll(int aiDirection)
+	if (!m_enableRolls || m_midRoll)
 		return
 	endif
 
-	; Already mid-roll? Ignore — no double rolls.
-	if (m_inIframeWindow)
-		return
-	endif
-
-	int tier = GetEquipLoadTier()
+	int   tier     = GetEquipLoadTier()
 	float duration = RollDurationForTier(tier)
 
 	; Stamina gate: not enough stamina to roll -> do nothing (ER behaviour).
-	; Skyrim's Actor has no GetStamina/SetStamina (those are Fallout 4 APIs); use
-	; the actor-value functions instead.
 	if (GetActorValue("Stamina") < m_rollStaminaCost)
 		return
 	endif
 
-	; Play the direction-appropriate roll animation for this equip-load tier.
-	string animName = RollAnimForTierAndDir(tier, aiDirection)
-	PlayRollAnimation(animName)
-
-	; Deduct stamina (Skyrim's own stamina pool — we only spend it).
+	PlayAnimation(RollAnimForTierAndDir(tier, aiDirection))
 	DamageActorValue("Stamina", m_rollStaminaCost)
 
-	; Open the i-frame window. The plugin uses `duration` and IframeFraction to
-	; nullify incoming physical damage for the invincible portion of the roll, and
-	; closes the window itself after the duration elapses (it then pushes
-	; ERC_RollEnded). We do NOT block here with Utility.Wait — that would freeze
-	; the player mid-roll. The flag is cleared by the ERC_RollEnded event below.
-	m_currentRollTier = tier
-	m_inIframeWindow  = true
+	m_midRoll     = true
+	m_rollEndTime = Utility.GetCurrentRealTime() + duration
+
+	; Open the i-frame window in the plugin (fraction of `duration`).
 	ERC_RollStarted(duration)
-endEvent
-
-; Pushed by the plugin when a roll's i-frame window has elapsed (or the roll was
-; cancelled). Clears our "mid-roll" flag so the next tap can start a new roll.
-event ERC_RollEnded()
-	m_inIframeWindow  = false
-	m_currentRollTier = -1
-endEvent
-
-; Play a roll animation event. Falls back gracefully if the moveset does not
-; provide that exact event name (nothing plays, no crash). Equip-load scaling is
-; expressed through the per-tier *durations* (heavier = longer/slower roll), which
-; also size the i-frame window — so we play at normal rate here.
-; NOTE: Actor.PlayAnimation is the real Skyrim API; there is no GetAnimationObject.
-function PlayRollAnimation(string animName)
-	if (animName == "")
-		return
-	endif
-	PlayAnimation(animName)
 endFunction
 
-; Map equipped weapon + armour weight to an ER equip-load tier:
-;   0 = light, 1 = medium, 2 = heavy.
-; NOTE: Papyrus puts the return type BEFORE the function keyword (there is no
-; `: type` suffix syntax — that is a different language's convention).
+; Map equipped weapon weight to an ER equip-load tier: 0 light, 1 medium, 2 heavy.
 int function GetEquipLoadTier()
 	float weight = 0.0
 
@@ -233,8 +185,6 @@ int function GetEquipLoadTier()
 		weight += weapon.GetWeight()
 	endif
 
-	; Add a share of equipped armour weight as a proxy for total load. We keep
-	; this deliberately simple and tunable via the MCM thresholds (cached above).
 	if (weight < m_equipLoadLightCut)
 		return 0
 	else
@@ -256,15 +206,8 @@ float function RollDurationForTier(int aiTier)
 	return m_rollDurationHeavy
 endFunction
 
-; Heavier load rolls slower — expressed as a *longer* roll duration per tier
-; (see RollDurationForTier), which also lengthens the i-frame window.
-
-; Pick the roll animation for a tier + direction. A *directional* roll (direction
-; != front) is only ever requested by the plugin while locked on — the dodge
-; button tap carries the strafe direction relative to the lock-on target. So we
-; use the directional variant whenever aiDirection > 0, which preserves facing
-; toward the target exactly like ELDEN RING's lock-on dodge. When not locked on
-; (direction == front) we play the base roll.
+; Heavier load rolls slower via a longer per-tier duration, which also lengthens
+; the i-frame window. Directional rolls are only requested while locked on.
 string function RollAnimForTierAndDir(int aiTier, int aiDirection)
 	string base
 	if (aiTier == 0)
@@ -277,7 +220,6 @@ string function RollAnimForTierAndDir(int aiTier, int aiDirection)
 		endif
 	endif
 
-	; Directional suffix only matters when a non-front direction was requested.
 	if (m_enableLockOnRolls && aiDirection > 0)
 		string suffix
 		if (aiDirection == 1)
@@ -296,42 +238,33 @@ string function RollAnimForTierAndDir(int aiTier, int aiDirection)
 endFunction
 
 ; ============================================================================
-;  HIT-STOP  (attacker + target freeze on impact)
+;  HIT REACTIONS  (stagger tiers)
 ; ============================================================================
 
-; Fired by the plugin when the PLAYER lands a hit on an enemy.
-event ERC_PlayerLandedHit()
-	if (!m_initialized || self != Game.GetPlayer())
+; Skyrim's OnHit carries no damage amount, so approximate the incoming hit from
+; the source weapon's base damage — enough to pick a reaction tier.
+event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, bool abPowerAttack, bool abSneakAttack, bool abBashAttack, bool abHitBlocked)
+	if (self != Game.GetPlayer())
 		return
 	endif
-	MarkPluginLoaded()   ; DLL present -> sync settings, then safe to call natives
-	if (!m_enableHitStop)
+	if (!m_enableGuardBreak || akSource == none)
 		return
 	endif
-	ERC_TriggerHitStop(m_hitStopSeconds)
+
+	Weapon w = akSource as Weapon
+	if (w == none)
+		return
+	endif
+
+	float approxDamage = w.GetDamage()
+	if (approxDamage <= 0.0)
+		return
+	endif
+
+	PlayStaggerReaction(approxDamage)
 endEvent
 
-; Fired by the plugin when the player IS hit (and not in an i-frame window —
-; the plugin already nullified those). We apply hit-stop and a stagger reaction.
-event ERC_PlayerGotHit(float afDamage, int aiDirection)
-	if (!m_initialized || self != Game.GetPlayer())
-		return
-	endif
-	MarkPluginLoaded()   ; DLL present -> sync settings, then safe to call natives
-
-	; Hit-stop on being struck (the "impact freeze" you feel in ER).
-	if (m_enableHitStop && afDamage > 0.0)
-		ERC_TriggerHitStop(m_hitStopSeconds)
-	endif
-
-	; Guard break / stagger tier reaction.
-	if (m_enableGuardBreak && afDamage > 0.0)
-		PlayStaggerReaction(afDamage, aiDirection)
-	endif
-endEvent
-
-; Choose and play the hit-reaction animation for the incoming damage amount.
-function PlayStaggerReaction(float afDamage, int aiDirection)
+function PlayStaggerReaction(float afDamage)
 	string animName
 	if (afDamage < m_staggerFlinch)
 		animName = m_animFlinch
@@ -347,70 +280,19 @@ function PlayStaggerReaction(float afDamage, int aiDirection)
 		endif
 	endif
 
-	if (animName == "")
-		return
+	if (animName != "")
+		PlayAnimation(animName)
 	endif
-
-	PlayAnimation(animName)
 endFunction
 
 ; ============================================================================
-;  PAPYRUS-ONLY FALLBACK  (stagger reactions with no DLL)
-; ----------------------------------------------------------------------------
-;  When ERC.dll is absent, the DLL-fired events above never arrive. To keep the
-;  .esp useful on its own, we fall back to Skyrim's native OnHit event for
-;  stagger/hit-reaction animations. This is gated on !m_pluginLoaded so that when
-;  the DLL IS present it owns damage handling (via ERC_PlayerGotHit) and we do NOT
-;  double-react.
-;
-;  What Papyrus-only mode CANNOT do (needs the DLL): tap-to-dodge rolls, true
-;  i-frames, and hit-stop. Hit-stop in particular needs a global timescale dip —
-;  Utility.Wait only freezes the player while the world runs at full speed, which
-;  is not the ER effect. So this fallback provides stagger reactions alone.
-;
-;  NOTE: Skyrim has no OnDamage event (that is a Fallout 4 API); OnHit is the
-;  correct event. It carries no damage amount, so we approximate from the source
-;  weapon's base damage to choose a reaction tier.
+;  NATIVE FUNCTIONS (implemented by ERC.dll — see plugin/src/ERCNatives.cpp)
 ; ============================================================================
-
-event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, bool abPowerAttack, bool abSneakAttack, bool abBashAttack, bool abHitBlocked)
-	if (!m_initialized || self != Game.GetPlayer())
-		return
-	endif
-	; If the plugin is present it handles damage events itself — stand down so we
-	; don't apply stagger twice on the same hit.
-	if (m_pluginLoaded)
-		return
-	endif
-	if (!m_enableGuardBreak || akSource == none)
-		return
-	endif
-
-	Weapon w = akSource as Weapon
-	float approxDamage = 0.0
-	if (w != none)
-		approxDamage = w.GetDamage()
-	endif
-	if (approxDamage <= 0.0)
-		return
-	endif
-
-	PlayStaggerReaction(approxDamage, 0)
-endEvent
-
-; ============================================================================
-;  NATIVE FUNCTIONS (implemented by the SKSE plugin — see ERC_Papyrus.h)
-; ============================================================================
+;  Native declarations use the form:  <type> function Name(params) native
+;  (return type first, `native` last; no return type = void).
 ;
-;  NOTE on DLL detection: we do NOT use a native (or a global) to check whether
-;  the plugin is loaded — calling any missing native throws, and there is no safe
-;  built-in existence probe. Instead detection is *reactive*: natives are only ever
-;  called from inside an ERC_* event handler or via MarkPluginLoaded(), both of which
-;  can only run if ERC.dll delivered the event (so every native exists). In Papyrus-
-;  only mode no events fire, so no native is ever called and nothing throws.
-
-;  native declarations use the form:  <ReturnType> Function <Name>(<params>) native
-;  (return type first, `native` last). `Function` with no return type = void.
+;  These are only ever called because ERC.dll is required — if the DLL is
+;  missing, Papyrus throws on the first call, which is the intended hard failure.
 
 float  function ERC_GetFloat(string akKey) native
 int    function ERC_GetInt(string akKey) native
@@ -418,13 +300,13 @@ bool   function ERC_GetBool(string akKey) native
 string function ERC_GetString(string akKey) native
 function ERC_SetFloat(string akKey, float afValue) native
 
-; Tell the plugin a roll of `afDuration` seconds has begun (open i-frames).
-; NOTE: ERC_RollEnded and ERC_OnPluginAttached are EVENTS (declared above) that the
-; plugin calls — they must NOT also be declared native here, or the script fails to
-; compile with a duplicate-name error.
+; Returns the next queued dodge-tap direction, or -1 if none. Reserved for a
+; DLL input hook that can also supply a direction (lock-on aware).
+; Currently unused by the script, which polls the key directly instead.
+int function ERC_ConsumeDodgeTap() native
+
+; Open the i-frame window for the first IframeFraction of afDurationSeconds.
 function ERC_RollStarted(float afDurationSeconds) native
 
-; Dip global timescale to HitStopScale for `afSeconds`, then auto-restore.
+; Dip timescale to HitStopScale for afSeconds, then restore.
 function ERC_TriggerHitStop(float afSeconds) native
-float  function ERC_GetTimeScale() native
-function ERC_SetTimeScale(float afValue) native

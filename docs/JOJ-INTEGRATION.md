@@ -39,11 +39,11 @@ dodge invincibility, impact freeze, and hit reactions for the player character o
   is shared, ERC's version wins for the player. (In practice ERC adds almost no
   conflicting records — it's mostly scripts + one SKSE plugin — so load-order
   sensitivity is low. Place it in the "gameplay/combat" group after BFCO.)
-- **`ERC.dll`** lives in `SKSEPlugins/` and is loaded by SKSE independently of the
-  `.esp` load order. It must be present for the full experience (see BUILD.md).
+- **`ERC.dll`** lives in `Data/SKSE/Plugins/` and is loaded by SKSE independently of
+  the `.esp` load order. It must be present for the full experience (see BUILD.md).
 
 In Wabbajack/MO2, add the mod as a normal profile entry; the DLL ships inside the
-mod's `data/SKSEPlugins/` folder and is picked up automatically.
+mod's `Data/SKSE/Plugins/` folder and is picked up automatically.
 
 ## Step 2 — Disable BFCO's *player* dodge & hit-reactions (verify in CK)
 
@@ -55,7 +55,7 @@ open the BFCO plugin(s) and:
    Disable it for the player only. *(Do NOT disable enemy dodge records.)*
 2. **Player hit-reactions / stagger.** Find BFCO's player flinch/stagger/knockdown
    animations or the script that triggers them, and disable for the player. ERC now
-   owns these via its `OnHit`/`ERC_PlayerGotHit` path.
+   owns these via its `OnHit` path.
 3. **Leave everything else** (damage, enemy AI, movement, sprint) enabled.
 
 > If BFCO's player combat is driven by a single master script/form rather than many
@@ -71,7 +71,8 @@ that JOJ's For Honor / Wo Long movesets provide:
 
 - In CK, open the moveset plugin and read each roll / hit-reaction animation's
   **event name** (the string the engine matches on).
-- Enter those strings in `SKSEPlugins/EldenRingCombat.ini` under the keys
+- Enter those strings on the MCM **Animations** page, or in
+  `Data/SKSE/Plugins/EldenRingCombat.ini` under the keys
   `AnimFlinch`, `AnimStagger`, `AnimLargeStagger`, `AnimKnockdown`,
   `RollLightFront`, `RollMediumFront`, `RollHeavyFront`. (Directional variants are
   derived by appending `_Back/_Left/_Right`.)
@@ -81,23 +82,31 @@ play (no crash). So you can iterate: set a name, test in-game, adjust.
 
 ## Step 4 — Match the dodge key to JOJ's binding
 
-ERC's C++ plugin reads the **dodge button** each frame (`ReadDodgeButton()`, HOOK-1).
-You must point it at whatever key/gamepad button JOJ binds *dodge* to (BFCO/TDM may
-use a non-default binding, e.g. a specific gamepad face-button or a keyboard key).
-Check the binding in-game (or in BFCO's MCM), then wire HOOK-1 to read that exact
-input. See BUILD.md, "Wiring HOOK-1."
+Dodge input is detected **in Papyrus** by polling a DirectInput scan code every
+0.03s (`Input.IsKeyPressed`), then splitting tap (roll) from hold (sprint). Set
+`DodgeKeyCode` in the MCM to whatever JOJ binds dodge to.
+
+- Default is **56 = Left Alt** (tap = roll, hold = Skyrim's native sprint).
+- Other common codes: `57` = Space, `42` = Left Shift, `29` = Left Ctrl.
+
+Gamepad is **not** covered by Papyrus (it has no gamepad query). Controller users
+need the C++ input hook (`[HOOK-1]` in BUILD.md), which also supplies a lock-on
+direction. Until then, rolls on a controller won't trigger.
 
 ## Step 5 — Tune via the MCM
 
 Once running under `skse_loader.exe`, open the **Elden Ring Combat** MCM and tune:
 
-- **Combat page:** roll stamina cost, i-frame fraction, hit-stop
-  duration + timescale, the three stagger thresholds, and the feature toggles.
-- **Movement page:** equip-load weight cuts, per-tier roll durations (heavier =
-  longer/slower), sprint-hold threshold, lock-on rolls toggle.
+- **Combat page:** dodge key code, sprint-hold time, roll stamina cost, i-frame
+  fraction, hit-stop duration + timescale, and the feature toggles.
+- **Stagger page:** the three reaction thresholds (flinch / stagger / large).
+- **Movement page:** equip-load weight cuts and per-tier roll durations
+  (heavier = longer/slower).
+- **Animations page:** the animation event names to match JOJ's moveset.
 
-Defaults are ER-derived starting points; adjust to taste. Everything persists to
-`SKSEPlugins/EldenRingCombat.ini`.
+Defaults are ER-derived starting points; adjust to taste. MCM Helper persists
+choices to `Data/MCM/Settings/EldenRingCombat.ini`, which `ERC.dll` merges over
+`Data/SKSE/Plugins/EldenRingCombat.ini` on load and on game load.
 
 ---
 
@@ -107,7 +116,7 @@ Defaults are ER-derived starting points; adjust to taste. Everything persists to
 |---|---|
 | BFCO player roll vs ERC roll both firing | Disable BFCO's *player* dodge record (Step 2). Enemies unaffected. |
 | BFCO player stagger vs ERC stagger double-playing | Disable BFCO's *player* hit-reaction trigger (Step 2). ERC owns it now. |
-| TDM lock-on vs ERC directional rolls | No conflict — TDM owns the target; ERC only chooses roll variants from the direction TDM provides. Keep both enabled. |
+| TDM lock-on vs ERC directional rolls | No conflict, but note: Papyrus cannot read TDM's target bearing, so with the current keyboard polling every roll uses the front variant. Directional rolls need the `[HOOK-1]` input hook. |
 | Two mods setting `fTimeScale` (hit-stop) | If another mod also dips timescale, hit-stops can stack/override. ERC saves & restores the prior value, so it's well-behaved — but avoid running two hit-stop mods at once. |
 | Stamina cost double-deduction | BFCO may already deduct stamina for its roll. Since you disable BFCO's player roll (Step 2), only ERC deducts. If you keep both, lower one of the costs to avoid a double drain. |
 

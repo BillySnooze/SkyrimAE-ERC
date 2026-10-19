@@ -1,5 +1,5 @@
 # Build outputs (compiled binaries are not committed — see docs/BUILD.md)
-data/SKSEPlugins/*.dll
+data/SKSE/Plugins/*.dll
 data/**/*.esp
 data/**/*.esm
 *.obj
@@ -8,6 +8,9 @@ data/**/*.esm
 
 # Third-party SKSE runtime/SDK downloads (not part of this mod)
 skse64_*/
+
+# Scratch dir for genuine-header checks
+validation-tmp/
 
 # CMake / build trees
 build/

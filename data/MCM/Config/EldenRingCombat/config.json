@@ -1,0 +1,206 @@
+{
+  "modName": "EldenRingCombat",
+  "displayName": "Elden Ring Combat",
+  "minMcmVersion": 3,
+  "content": [
+    {
+      "type": "page",
+      "text": "Combat",
+      "content": [
+        {
+          "type": "slider",
+          "text": "Roll Stamina Cost",
+          "id": "fRollStaminaCost",
+          "help": "Stamina spent when a dodge roll starts. ELDEN RING default is 12.",
+          "valueOptions": { "min": 0, "max": 50, "step": 1, "defaultValue": 12 }
+        },
+        {
+          "type": "slider",
+          "text": "I-Frame Fraction",
+          "id": "fIframeFraction",
+          "help": "Fraction of the roll that is invincible. 0.55 = first 55% of the roll.",
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "defaultValue": 0.55 }
+        },
+        {
+          "type": "slider",
+          "text": "Hit-Stop Duration",
+          "id": "fHitStopSeconds",
+          "help": "How long the world freezes on impact, in seconds.",
+          "valueOptions": { "min": 0, "max": 0.3, "step": 0.01, "defaultValue": 0.06 }
+        },
+        {
+          "type": "slider",
+          "text": "Hit-Stop Timescale",
+          "id": "fHitStopScale",
+          "help": "Timescale multiplier during hit-stop. Lower = harder freeze.",
+          "valueOptions": { "min": 0.05, "max": 1, "step": 0.05, "defaultValue": 0.15 }
+        },
+        {
+          "type": "slider",
+          "text": "Dodge Key Code",
+          "id": "iDodgeKeyCode",
+          "help": "DirectInput scan code for dodge. 56 = Left Alt (tap to roll, hold to sprint), 57 = Space, 42 = Left Shift.",
+          "valueOptions": { "min": 1, "max": 255, "step": 1, "defaultValue": 56 }
+        },
+        {
+          "type": "slider",
+          "text": "Sprint Hold Time",
+          "id": "fSprintHoldSeconds",
+          "help": "Holding dodge longer than this (seconds) is a sprint, not a roll.",
+          "valueOptions": { "min": 0.05, "max": 0.6, "step": 0.01, "defaultValue": 0.25 }
+        },
+        {
+          "type": "toggle",
+          "text": "Enable Dodge Rolls",
+          "id": "bEnableRolls",
+          "help": "Turn the tap-to-roll system on or off.",
+          "valueOptions": { "defaultValue": true }
+        },
+        {
+          "type": "toggle",
+          "text": "Enable Hit-Stop",
+          "id": "bEnableHitStop",
+          "help": "Freeze on impact, like ELDEN RING.",
+          "valueOptions": { "defaultValue": true }
+        },
+        {
+          "type": "toggle",
+          "text": "Enable Guard Break",
+          "id": "bEnableGuardBreak",
+          "help": "Enable the four-tier hit reaction system.",
+          "valueOptions": { "defaultValue": true }
+        },
+        {
+          "type": "toggle",
+          "text": "Enable Lock-On Rolls",
+          "id": "bEnableLockOnRolls",
+          "help": "Use directional roll variants while locked on, preserving facing.",
+          "valueOptions": { "defaultValue": true }
+        }
+      ]
+    },
+    {
+      "type": "page",
+      "text": "Stagger",
+      "content": [
+        {
+          "type": "slider",
+          "text": "Flinch Threshold",
+          "id": "iStaggerFlinchThreshold",
+          "help": "Damage below this plays the flinch reaction.",
+          "valueOptions": { "min": 0, "max": 100, "step": 1, "defaultValue": 8 }
+        },
+        {
+          "type": "slider",
+          "text": "Stagger Threshold",
+          "id": "iStaggerStaggerThreshold",
+          "help": "Damage below this plays the stagger reaction.",
+          "valueOptions": { "min": 0, "max": 100, "step": 1, "defaultValue": 20 }
+        },
+        {
+          "type": "slider",
+          "text": "Large Stagger Threshold",
+          "id": "iStaggerLargeThreshold",
+          "help": "Damage below this plays the large stagger; above it knocks down.",
+          "valueOptions": { "min": 0, "max": 200, "step": 1, "defaultValue": 40 }
+        }
+      ]
+    },
+    {
+      "type": "page",
+      "text": "Movement",
+      "content": [
+        {
+          "type": "slider",
+          "text": "Light Roll Duration",
+          "id": "fRollDurationLight",
+          "help": "Seconds the light-load roll takes (also sizes its i-frames).",
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 0.62 }
+        },
+        {
+          "type": "slider",
+          "text": "Medium Roll Duration",
+          "id": "fRollDurationMedium",
+          "help": "Seconds the medium-load roll takes.",
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 0.78 }
+        },
+        {
+          "type": "slider",
+          "text": "Heavy Roll Duration",
+          "id": "fRollDurationHeavy",
+          "help": "Seconds the heavy-load roll takes.",
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 1.05 }
+        },
+        {
+          "type": "slider",
+          "text": "Light Load Cutoff",
+          "id": "fEquipLoadLightCut",
+          "help": "Equipped weapon weight below this counts as light load.",
+          "valueOptions": { "min": 0, "max": 60, "step": 1, "defaultValue": 12 }
+        },
+        {
+          "type": "slider",
+          "text": "Medium Load Cutoff",
+          "id": "fEquipLoadMediumCut",
+          "help": "Equipped weapon weight below this counts as medium load.",
+          "valueOptions": { "min": 0, "max": 100, "step": 1, "defaultValue": 30 }
+        }
+      ]
+    },
+    {
+      "type": "page",
+      "text": "Animations",
+      "content": [
+        {
+          "type": "textinput",
+          "text": "Flinch Animation",
+          "id": "sAnimFlinch",
+          "help": "Animation event name for the flinch reaction.",
+          "valueOptions": { "defaultValue": "HitReaction_Flinch" }
+        },
+        {
+          "type": "textinput",
+          "text": "Stagger Animation",
+          "id": "sAnimStagger",
+          "help": "Animation event name for the stagger reaction.",
+          "valueOptions": { "defaultValue": "HitReaction_Stagger" }
+        },
+        {
+          "type": "textinput",
+          "text": "Large Stagger Animation",
+          "id": "sAnimLargeStagger",
+          "help": "Animation event name for the large stagger.",
+          "valueOptions": { "defaultValue": "HitReaction_LargeStagger" }
+        },
+        {
+          "type": "textinput",
+          "text": "Knockdown Animation",
+          "id": "sAnimKnockdown",
+          "help": "Animation event name for the knockdown.",
+          "valueOptions": { "defaultValue": "HitReaction_Knockdown" }
+        },
+        {
+          "type": "textinput",
+          "text": "Light Roll Animation",
+          "id": "sRollLightFront",
+          "help": "Base animation event for the light roll (direction suffixes are appended).",
+          "valueOptions": { "defaultValue": "ERC_Roll_Light_Front" }
+        },
+        {
+          "type": "textinput",
+          "text": "Medium Roll Animation",
+          "id": "sRollMediumFront",
+          "help": "Base animation event for the medium roll.",
+          "valueOptions": { "defaultValue": "ERC_Roll_Medium_Front" }
+        },
+        {
+          "type": "textinput",
+          "text": "Heavy Roll Animation",
+          "id": "sRollHeavyFront",
+          "help": "Base animation event for the heavy roll.",
+          "valueOptions": { "defaultValue": "ERC_Roll_Heavy_Front" }
+        }
+      ]
+    }
+  ]
+}

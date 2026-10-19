@@ -1,200 +1,151 @@
 # Building ELDEN RING COMBAT
 
-This mod has two independently-buildable halves. You can ship **both** (the full
-experience) or just the Papyrus half (a working, if reduced, mod).
+Target runtime: **Skyrim SE/AE 1.6.1170** (the JOJ stock game at
+`F:\Modlists\JOJ\Stock Game`), with **SKSE 2.2.6**.
 
 ```
 EldenRingCombat/
 ├─ data/
-│  ├─ scripts/source/        ← Papyrus (.psc) — compiled in Creation Kit → .esp
-│  │   ├─ ERC_PlayerCombat.psc
-│  │   └─ ERC_Papyrus.h      (optional native decls for CK)
-│  └─ SKSEPlugins/           ← drop the built ERC.dll here at runtime
-├─ plugin/                   ← C++ source of the SKSE plugin (ERC.dll)
-│  ├─ include/  (ERCPlugin.h, ERCMCM.h)
-│  └─ src/      (ERCPlugin.cpp, ERCMCM.cpp)
-└─ docs/                     ← this file + JOJ-INTEGRATION.md
+│  ├─ scripts/source/ERC_PlayerCombat.psc   ← compiled in CK → .pex
+│  ├─ MCM/Config/EldenRingCombat/           ← MCM Helper menu (config.json + settings.ini)
+│  └─ SKSE/Plugins/                         ← drop the built ERC.dll here
+├─ plugin/
+│  ├─ include/  (ERCPlugin.h, erc_compat.h)
+│  ├─ src/      (ERCMain.cpp, ERCPlugin.cpp, ERCNatives.cpp)
+│  └─ validation/                           ← offline compile check (mock SDK)
+├─ tools/validate-psc.ps1                   ← Papyrus structural check
+└─ docs/
 ```
+
+There are **two** build steps: the Papyrus script (Creation Kit) and the plugin
+(MSVC).
 
 ---
 
-## Part A — The Papyrus half (Creation Kit) → `EldenRingCombat.esp`
+## Part A — Papyrus → `EldenRingCombat.esp`
 
-This is the part that always works. It compiles with no C++ toolchain at all.
+Requires **Creation Kit for Skyrim SE** (a separate Bethesda.net download; it is
+not installed in this environment).
 
-1. **Open Creation Kit** for Skyrim AE and create a new plugin:
-   *File → New Plugin*, name it `EldenRingCombat`, master = `Skyrim.esm`.
-2. **Add the script source.** Copy `data/scripts/source/ERC_PlayerCombat.psc`
-   into your CK project's `Script/` folder (the same folder that holds the
-   vanilla `.psc` files). If you have more than one ERC script, also copy
-   `ERC_Papyrus.h` there so CK can type-check the `native` calls.
-3. **Compile.** In the *Script* tab, select `ERC_PlayerCombat` and click
-   **Compile**. Fix any reported errors (the script is written to be clean;
-   the only expected warnings are about the `native` functions if you did not
-   add `ERC_Papyrus.h`).
-4. **Do NOT attach the script in CK.** The SKSE plugin attaches `ERC_PlayerCombat`
-   to the Player itself at game load (see Part B, step 5). Attaching it in CK *and*
-   having the DLL attach it would run the script twice. Leave the player's script
-   list empty for this mod.
-5. **Save** the plugin (`.esp`) into your mod's `data/` folder.
+1. Create a new plugin: *File → New Plugin*, name `EldenRingCombat`,
+   master `Skyrim.esm`.
+2. Copy `data/scripts/source/ERC_PlayerCombat.psc` into CK's `Script/` folder
+   (alongside the vanilla `.psc` files).
+3. In the *Script* tab, select `ERC_PlayerCombat` and **Compile**.
+4. Save the `.esp`.
 
-> **Papyrus-only mode.** If you ship only the `.esp` (no `ERC.dll`), the DLL-fired
-> events never arrive, so the script falls back to Skyrim's native `OnHit` event
-> for **stagger / hit-reaction animations** (the 4-tier flinch→knockdown system).
-> What it CANNOT do without the DLL: tap-to-dodge rolls, true i-frames, and hit-stop
-> (hit-stop needs a global timescale dip — `Utility.Wait` only freezes the player,
-> not the world). So Papyrus-only is a partial fallback / smoke-test, not the full
-> experience. The script detects this automatically: with no DLL it never calls a
-> native (which would throw) and runs the `OnHit` path instead.
+> **Do not attach the script to the player in CK.** The SKSE plugin attaches
+> `ERC_PlayerCombat` to the Player at load time (`AttachScript` in
+> `ERCPlugin::Init`). Attaching it in CK as well would run it twice.
+
+Note: there is no `ERC_Papyrus.h`. Papyrus has no `#include` of C headers, so a
+hand-written header cannot type-check `native` declarations — the `native`
+keyword in the `.psc` is all CK needs.
+
+The script **requires `ERC.dll`**: every `ERC_*` call is a native implemented by
+the plugin, and Papyrus throws if the DLL is absent. This is deliberate — there
+is no silent half-working mode.
 
 ---
 
-## Part B — The SKSE plugin (C++) → `ERC.dll`
+## Part B — `ERC.dll` (SKSE plugin)
 
-> **Read `docs/SKSE-API-NOTES.md` first.** A validation pass confirmed the C++
-> here is written against a *stand-in* API (a `SKSEPlugin` base class,
-> `CreateSKSEPlugin()`, `IWMCM`). It compiles cleanly with MSVC, but the official
-> SKSE plugin API uses `SKSEPlugin_Version` + `SKSEPlugin_Load` and has no
-> `Update()` or `IWMCM`. That document gives the exact mapping and the porting
-> steps. Do that port before you expect a working `.dll`.
+Requires the **SKSE plugin SDK** for 2.2.6 (its `skse64/` headers, including the
+`common/` submodule — note the source tarball inside the SKSE release does **not**
+contain `common/`, so use the full SDK package).
 
-Requires: **SKSE SDK** for your Skyrim AE version, and a C++ compiler
-(MSVC via Visual Studio, or clang-cl). Get the matching SDK from the SKSE
-project's GitHub releases; the headers in `plugin/include/` assume the standard
-SDK layout.
+### Build
 
-### 1. Build the DLL
+From the repository root, in a *x64 Native Tools* prompt:
 
-Create a small CMake project (or an empty MSVC DLL project) that compiles:
-
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(EldenRingCombatPlugin LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-
-# Point these at your SKSE SDK location.
-set(SKSE_SDK "C:/path/to/skse-sdk")
-
-add_library(ERC SHARED
-    src/ERCPlugin.cpp
-    src/ERCMCM.cpp
-    src/ERCNatives.cpp)
-
-target_include_directories(ERC PRIVATE
-    include
-    ${SKSE_SDK}/skse
-    ${SKSE_SDK}/skse/common
-    ${SKSE_SDK}/skse/plugins
-    ${SKSE_SDK}/skse/external)
-
-# Link the SKSE common + plugin libraries your SDK provides.
-target_link_libraries(ERC PRIVATE
-    ${SKSE_SDK}/lib/skse_common.lib
-    ${SKSE_SDK}/lib/skse_plugin_api.lib   # names vary by SDK version
-    ${SKSE_SDK}/lib/bsutility.lib)
-
-# Output the dll straight into the mod's runtime folder.
-set_target_properties(ERC PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../data/SKSEPlugins")
+```bat
+cl /nologo /std:c++17 /EHsc /O2 /LD ^
+   /I plugin\include /I "%SKSE_SDK_ROOT%" ^
+   plugin\src\ERCMain.cpp plugin\src\ERCPlugin.cpp plugin\src\ERCNatives.cpp ^
+   /Fe:data\SKSE\Plugins\ERC.dll
 ```
 
-Configure + build in **Release** (x64). The result is `ERC.dll` — copy it to
-`data/SKSEPlugins/`. SKSE loads any `.dll` in that folder automatically.
+`%SKSE_SDK_ROOT%` is the directory that *contains* `skse64/` (and
+`skse64_common/`). No import library is needed: the plugin only calls through the
+`SKSEInterface` function pointers, never SKSE's exported symbols directly.
 
-> If your SDK's library names differ, adjust the three `target_link_libraries`
-> entries. The source itself does not depend on those names.
+Alternatively, a CMake `add_library(ERC SHARED ...)` with the same sources and
+include dirs works.
 
-### 2. Wire HOOK-1 — per-frame dodge-button read
+### What is implemented
 
-In `ERCPlugin.cpp`, the function `ReadDodgeButton()` is a stub that returns
-`false`. Replace its body with a read of your SDK's input manager so it reports
-whether the **dodge/roll** button is currently down. Two approaches:
+| Piece | State |
+|---|---|
+| `SKSEPlugin_Version` / `SKSEPlugin_Load` entry points | ✅ verified to compile against the genuine SKSE 2.2.6 `PluginAPI.h` |
+| Papyrus native registration (`ERC_*`, class `ERC_PlayerCombat`) | ✅ implemented |
+| Settings store + ini merge (plugin ini + MCM Helper ini) | ✅ implemented |
+| I-frame window maths (`OnRollStarted`, `InIframeWindow`) | ✅ implemented |
+| Hit-stop timing | ✅ timing implemented; applying the timescale dip is `[HOOK-2]` |
+| Per-frame `Update()` | ⚠️ needs a hook to be called (see below) |
+| Input hook / damage nullification | ⚠️ `[HOOK-1]` / `[HOOK-2]` — version-specific |
 
-- **(a) Raw button state.** Read the gamepad `B` / keyboard `Space` (or whatever
-  key JOJ binds dodge to — check BFCO/TDM's binding) from your SDK's input
-  manager each frame.
-- **(b) Hook the dodge action** (more robust): hook the function the engine calls
-  when the dodge *action* fires and set a flag `ReadDodgeButton()` returns.
+### Remaining version-specific work
 
-This is the only place you need to know your exact SKSE version's input API.
-Everything downstream (tap vs hold, roll triggering) is already written.
+Two things cannot be written without your game's addresses:
 
-### 3. Wire HOOK-2 — i-frame damage nullification (optional but core to the feel)
+**`[HOOK-2]` — i-frame damage nullification + hit-stop timescale.**
+`ApplyTimeScale()` in `ERCPlugin.cpp` is a marked stub. Install a hook on the
+player damage path and zero physical damage while `InIframeWindow()` is true;
+apply the timescale dip for hit-stop. With CommonLibSSE-NG this is a few lines;
+without it you need signature scans for your exact runtime.
 
-In `OnGameLoaded()`, install a hook on the player's damage path (e.g.
-`BGSLivingProcess::ApplyDamage` / `BGSActor::TakeHit`). When it fires, call:
+**`[HOOK-1]` — per-frame tick + optional gamepad input.**
+`ERCPlugin::Update()` is not called by SKSE automatically. Call it from a hook
+(same place as above). Dodge *input* does **not** need this hook: the script polls
+a keyboard key itself, so keyboard rolls work as soon as the DLL loads.
 
-```cpp
-CancelIframeHit(&g_ercPlugin, /*abIsPhysical=*/ true);   // for physical hits
-```
+---
 
-The decision logic in `CancelIframeHit()` is already complete — if we're inside
-the i-frame window and the hit is physical, your hook should make it apply **no
-damage** (zero the damage value / return early). The exact mechanism depends on
-which function you hook. If you skip this hook, rolls still play but do not
-grant true invincibility — they fall back to whatever protection your dodge
-animation already has.
+## Part C — MCM
 
-### 4. Verify the Papyrus bridge + native registration
+The menu is **MCM Helper** (SkyUI's MCM, driven by JSON) — no C++ menu code.
 
-`ERCNatives.cpp::RegisterNatives()` wires every `ERC_*` native into the VM, and
-the three `CallPapyrus*` helpers in `ERCPlugin.cpp` invoke functions on the
-player's script via `GetFunctionByName` + `CallFunction`. Both use stable SKSE
-APIs. If your SDK version names any of these calls differently (`AddFunction`,
-`GetPlayerScript`, `GetFunctionByName`, `CallFunction`, `StackFrame::Push`),
-adjust only those lines — the logic is complete and version-independent.
+- `data/MCM/Config/EldenRingCombat/config.json` — the menu.
+- `data/MCM/Config/EldenRingCombat/settings.ini` — defaults.
+- At runtime MCM Helper writes `Data/MCM/Settings/EldenRingCombat.ini`.
 
-The events the bridge must deliver:
-
-| Function | Args | When |
-|---|---|---|
-| `ERC_OnPluginAttached()` | — | once, one frame after the script is attached (sets `m_pluginLoaded`, syncs settings) |
-| `ERC_DodgeTap(int)` | direction 0–3 | a dodge tap is detected (HOOK-1) |
-| `ERC_SettingsChanged()` | — | an MCM slider/toggle changed |
-| `ERC_RollStarted(float)` | duration seconds | a roll begins |
-| `ERC_RollEnded()` | — | a roll ends |
-
-> **Attaching the script.** `OnGameLoaded()` calls `vm->AttachScript(player, "ERC_PlayerCombat")`
-> (marked `[VERSION-SPECIFIC]`) and sets `_attachPending`; `Update()` then fires
-> `ERC_OnPluginAttached()` one frame later so the freshly-attached script is resolvable.
-> If your SDK names `AttachScript` differently, adjust that one line — do **not** also
-> attach it in CK (double-run).
-
-If a VM call fails, the plugin logs it and continues — native behaviour
-(i-frames, hit-stop) is independent of Papyrus, so a bridge mismatch never
-crashes the game.
+`ERC.dll` reads that file on load and on `PostLoadGame`, stripping MCM Helper's
+`f`/`i`/`b`/`s` type prefix, and merges it over
+`Data/SKSE/Plugins/EldenRingCombat.ini`. So MCM choices take effect without any
+extra Papyrus glue.
 
 ---
 
 ## Validating without the full toolchain
 
-Two checks run without Creation Kit or the SKSE SDK:
-
 | Command | What it proves |
 |---|---|
-| `powershell -File tools\validate-psc.ps1 -Path data\scripts\source\ERC_PlayerCombat.psc` | Papyrus structure: no duplicate event/function names, balanced `Event`/`EndEvent` and `Function`/`EndFunction` blocks, and no known non-Skyrim API or C-style syntax. |
-| `plugin\validation\build-check.bat` | The C++ **compiles** (`cl /c`) against mock SKSE headers in `plugin\validation\mock-sdk\` — catching typos, type errors and missing symbols. Produces `.obj` only; no DLL, no link. |
+| `powershell -File tools\validate-psc.ps1 -Path data\scripts\source\ERC_PlayerCombat.psc` | Papyrus structure: no duplicate names, balanced blocks, no known non-Skyrim API or C-style syntax. |
+| `plugin\validation\build-check.bat` | The C++ **compiles** (`cl /c`) against mock SKSE headers in `plugin\validation\mock-sdk\`. `.obj` only — no DLL, no link. |
 
-Neither replaces a real build: the Papyrus still needs compiling in CK, and the DLL
-still needs linking against the real SKSE SDK. They just catch errors early.
+Neither replaces a real build. Additionally, `ERCMain.cpp` was checked against
+the **genuine** SKSE 2.2.6 headers; the Papyrus-native TU could not be, because
+the SDK's `common/` submodule is missing from the distributed source tarball.
 
-## Verifying the build
+---
 
-1. Drop `ERC.dll` into `<game>/SKSEPlugins/` (or your MO2 profile's override).
-2. Launch via **skse_loader.exe**.
-3. In-game, press the MCM key (default `~`) → **Elden Ring Combat** should appear.
-4. Open the *Combat* page — move a slider; confirm it persists to
-   `SKSEPlugins/EldenRingCombat.ini`.
-5. Tap dodge in combat: you should see a roll with an i-frame window and a
-   brief hit-stop when your attacks land.
+## Verifying in game
+
+1. Install SKSE 2.2.6 (matching 1.6.1170) and **MCM Helper**.
+2. Put `ERC.dll` in `Data/SKSE/Plugins/`, the `.esp` in `Data/`, and the
+   `MCM/` folder in `Data/`.
+3. Enable `EldenRingCombat.esp`, launch via `skse64_loader.exe`.
+4. In the MCM, **Elden Ring Combat** should appear with Combat / Stagger /
+   Movement / Animations pages.
+5. In combat, **tap** the dodge key (default Left Alt) — you should roll; **hold**
+   it — you should sprint (Skyrim's native sprint is untouched).
 
 ## Troubleshooting
 
 | Symptom | Likely cause / fix |
 |---|---|
-| MCM doesn't appear | `ERC.dll` not in `SKSEPlugins/`, or launched via plain `Skyrim.exe` instead of `skse_loader.exe`. |
-| Sliders work but nothing changes in-game | Papyrus bridge (step 4) not wired — events aren't reaching the script. |
-| Rolls don't trigger | HOOK-1 (`ReadDodgeButton`) still returns `false`, or the dodge key you read isn't the one JOJ binds. |
-| i-frames don't protect | HOOK-2 not installed (rolls play but damage gets through). |
-| CK compile errors on `native` lines | Add `ERC_Papyrus.h` to your CK `Script/` folder, or remove the `native` keyword if you're Papyrus-only. |
+| Nothing happens, Papyrus log shows "cannot call native" | `ERC.dll` not in `Data/SKSE/Plugins/`, or SKSE not loading (wrong game version). |
+| MCM doesn't appear | MCM Helper not installed. |
+| Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (56 = Left Alt). |
+| Rolls play but you still take damage | `[HOOK-2]` not installed — i-frames are inert without it. |
+| No hit-stop | Same: `[HOOK-2]` / `Update()` hook missing. |

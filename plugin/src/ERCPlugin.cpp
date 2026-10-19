@@ -52,6 +52,7 @@ static void Defaults(std::map<std::string, std::string>& s)
 	s["StaggerFlinchThreshold"] = "8";
 	s["StaggerStaggerThreshold"] = "20";
 	s["StaggerLargeThreshold"]  = "40";
+	s["KnockdownHealthFraction"] = "0.35";
 
 	s["EnableRolls"]            = "true";
 	s["EnableHitStop"]          = "true";
@@ -71,8 +72,8 @@ static void Defaults(std::map<std::string, std::string>& s)
 	s["RollDurationMedium"]     = "0.78";
 	s["RollDurationHeavy"]      = "1.05";
 
-	s["EquipLoadLightCut"]      = "12";
-	s["EquipLoadMediumCut"]     = "30";
+	s["EquipLoadLightCut"]      = "0.30";
+	s["EquipLoadMediumCut"]     = "0.70";
 }
 
 static std::string Trim(const std::string& in)

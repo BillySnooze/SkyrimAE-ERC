@@ -25,7 +25,7 @@ cd /d "%~dp0.."
 if not exist "validation\out" mkdir "validation\out"
 
 echo [check] Compiling ERC sources against mock SDK...
-cl /nologo /std:c++17 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /c /I include /I validation\mock-sdk ^
+cl /nologo /std:c++17 /EHsc /W3 /D_CRT_SECURE_NO_WARNINGS /DERC_MOCK_SDK /c /I include /I validation\mock-sdk ^
    src\ERCPlugin.cpp src\ERCNatives.cpp src\ERCMain.cpp /Fo:validation\out\
 
 if errorlevel 1 (

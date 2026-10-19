@@ -1,4 +1,4 @@
-scriptname ERC_PlayerCombat extends Actor hidden
+scriptname ERC_PlayerCombat extends ReferenceAlias hidden
 ; ============================================================================
 ;  ELDEN RING COMBAT (ERC) — Player Combat Feel
 ; ----------------------------------------------------------------------------
@@ -7,10 +7,16 @@ scriptname ERC_PlayerCombat extends Actor hidden
 ;    - Equip-load-scaled roll speed (light / medium / heavy)
 ;    - Hit-stop on impact (handled natively by ERC.dll)
 ;    - Guard break + 4-tier hit reactions (flinch -> knockdown)
-;    - Lock-on-aware rolls that preserve facing toward the target
+;    - Lock-on-aware roll animations
 ;
 ;  DAMAGE IS UNTOUCHED. This mod never changes weapon damage, scaling, or any of
 ;  Skyrim's combat numbers — it only reshapes timing, movement and reactions.
+;
+;  ATTACHMENT: this script is a quest ReferenceAlias script. Create a
+;  start-game-enabled quest in the Creation Kit with one alias forced to the
+;  Player reference, and attach ERC_PlayerCombat to that alias. See docs/BUILD.md
+;  (Part A). Skyrim has no way to attach a script to the player without such a
+;  plugin, and the SKSE plugin API cannot do it either.
 ;
 ;  REQUIRES ERC.dll (i-frames, hit-stop). Dodge *input* is detected here in
 ;  Papyrus by polling the dodge key, so rolls work without a version-specific
@@ -24,9 +30,6 @@ scriptname ERC_PlayerCombat extends Actor hidden
 ; --- Cached settings (mirrors of the plugin's values) -----------------------
 float m_rollStaminaCost   = 12.0
 float m_hitStopSeconds    = 0.06
-int   m_staggerFlinch     = 8
-int   m_staggerStagger    = 20
-int   m_staggerLarge      = 40
 bool  m_enableRolls       = true
 bool  m_enableHitStop     = true
 bool  m_enableGuardBreak  = true
@@ -45,8 +48,16 @@ float m_rollDurationLight  = 0.62
 float m_rollDurationMedium = 0.78
 float m_rollDurationHeavy  = 1.05
 
-float m_equipLoadLightCut  = 12.0
-float m_equipLoadMediumCut = 30.0
+; Equip-load thresholds are a RATIO of carried weight to max carry weight
+; (ELDEN RING: <=0.30 light, <=0.70 medium, above that heavy). Read from the
+; actor values InventoryWeight / CarryWeight — Skyrim's Papyrus has no
+; Form.GetWeight(), so this is both the correct API and a truer ER analogue.
+float m_equipLoadLightCut  = 0.30
+float m_equipLoadMediumCut = 0.70
+
+; Power attacks knock the player down only when health is below this fraction,
+; so a full-health heavy hit staggers instead of flattening you.
+float m_knockdownHealthFraction = 0.35
 
 ; Dodge input. Default is Left Alt (scan code 56): tap to roll, hold to sprint —
 ; the tap/hold split is what distinguishes a roll from Skyrim's native sprint.
@@ -70,16 +81,31 @@ float UPDATE_INTERVAL = 0.03
 ; ============================================================================
 
 event OnInit()
-	; The plugin attaches this script to the Player, but guard anyway.
-	if (self != Game.GetPlayer())
+	if (!IsPlayerAlias())
 		return
 	endif
 	RefreshSettings()
 	RegisterForSingleUpdate(UPDATE_INTERVAL)
 endEvent
 
+; Fired by the game when a save is loaded, so new MCM values take effect.
+event OnPlayerLoadGame()
+	if (!IsPlayerAlias())
+		return
+	endif
+	RefreshSettings()
+	RegisterForSingleUpdate(UPDATE_INTERVAL)
+endEvent
+
+; Guard: this alias must actually point at the player. If it does not, every
+; event below stands down rather than acting on some other actor.
+bool function IsPlayerAlias()
+	Actor ref = GetActorReference()
+	return (ref != none) && (ref == Game.GetPlayer())
+endFunction
+
 event OnUpdate()
-	if (self != Game.GetPlayer())
+	if (!IsPlayerAlias())
 		return
 	endif
 
@@ -96,10 +122,6 @@ endEvent
 function RefreshSettings()
 	m_rollStaminaCost   = ERC_GetFloat("RollStaminaCost")
 	m_hitStopSeconds    = ERC_GetFloat("HitStopSeconds")
-
-	m_staggerFlinch     = ERC_GetInt("StaggerFlinchThreshold")
-	m_staggerStagger    = ERC_GetInt("StaggerStaggerThreshold")
-	m_staggerLarge      = ERC_GetInt("StaggerLargeThreshold")
 
 	m_enableRolls       = ERC_GetBool("EnableRolls")
 	m_enableHitStop     = ERC_GetBool("EnableHitStop")
@@ -121,6 +143,7 @@ function RefreshSettings()
 
 	m_equipLoadLightCut  = ERC_GetFloat("EquipLoadLightCut")
 	m_equipLoadMediumCut = ERC_GetFloat("EquipLoadMediumCut")
+	m_knockdownHealthFraction = ERC_GetFloat("KnockdownHealthFraction")
 
 	m_dodgeKeyCode      = ERC_GetInt("DodgeKeyCode")
 	m_sprintHoldSeconds = ERC_GetFloat("SprintHoldSeconds")
@@ -158,16 +181,18 @@ function DoRoll(int aiDirection)
 		return
 	endif
 
-	int   tier     = GetEquipLoadTier()
+	Actor player = GetActorReference()
+
+	int   tier     = GetEquipLoadTier(player)
 	float duration = RollDurationForTier(tier)
 
 	; Stamina gate: not enough stamina to roll -> do nothing (ER behaviour).
-	if (GetActorValue("Stamina") < m_rollStaminaCost)
+	if (player.GetActorValue("Stamina") < m_rollStaminaCost)
 		return
 	endif
 
-	PlayAnimation(RollAnimForTierAndDir(tier, aiDirection))
-	DamageActorValue("Stamina", m_rollStaminaCost)
+	player.PlayAnimation(RollAnimForTierAndDir(tier, aiDirection))
+	player.DamageActorValue("Stamina", m_rollStaminaCost)
 
 	m_midRoll     = true
 	m_rollEndTime = Utility.GetCurrentRealTime() + duration
@@ -176,19 +201,21 @@ function DoRoll(int aiDirection)
 	ERC_RollStarted(duration)
 endFunction
 
-; Map equipped weapon weight to an ER equip-load tier: 0 light, 1 medium, 2 heavy.
-int function GetEquipLoadTier()
-	float weight = 0.0
-
-	Weapon weapon = GetEquippedWeapon()
-	if (weapon != none)
-		weight += weapon.GetWeight()
+; Map carried weight to an ER equip-load tier: 0 light, 1 medium, 2 heavy.
+; Skyrim exposes no Form.GetWeight(), but the actor values InventoryWeight and
+; CarryWeight give exactly the load ratio ELDEN RING uses for roll speed.
+int function GetEquipLoadTier(Actor akActor)
+	float maxCarry = akActor.GetActorValue("CarryWeight")
+	if (maxCarry <= 0.0)
+		return 1
 	endif
 
-	if (weight < m_equipLoadLightCut)
+	float ratio = akActor.GetActorValue("InventoryWeight") / maxCarry
+
+	if (ratio <= m_equipLoadLightCut)
 		return 0
 	else
-		if (weight < m_equipLoadMediumCut)
+		if (ratio <= m_equipLoadMediumCut)
 			return 1
 		endif
 	endif
@@ -241,38 +268,56 @@ endFunction
 ;  HIT REACTIONS  (stagger tiers)
 ; ============================================================================
 
-; Skyrim's OnHit carries no damage amount, so approximate the incoming hit from
-; the source weapon's base damage — enough to pick a reaction tier.
+; Skyrim's Papyrus exposes no weapon damage (Weapon has no GetDamage()), so the
+; reaction tier is derived from what OnHit actually reports — attack type and
+; whether the hit got through a block — plus the player's health fraction.
+;   0 flinch          normal hit
+;   1 stagger         bash or a hit that broke your block
+;   2 large stagger   power attack or sneak attack
+;   3 knockdown       power attack while below KnockdownHealthFraction
+; Damage-scaled reactions are what the DLL path ([HOOK-2]) would add.
 event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, bool abPowerAttack, bool abSneakAttack, bool abBashAttack, bool abHitBlocked)
-	if (self != Game.GetPlayer())
+	if (!IsPlayerAlias())
 		return
 	endif
-	if (!m_enableGuardBreak || akSource == none)
+	if (!m_enableGuardBreak)
 		return
 	endif
-
-	Weapon w = akSource as Weapon
-	if (w == none)
-		return
-	endif
-
-	float approxDamage = w.GetDamage()
-	if (approxDamage <= 0.0)
+	; Ignore fall damage and other sourceless hits.
+	if (akSource == none)
 		return
 	endif
 
-	PlayStaggerReaction(approxDamage)
+	PlayStaggerReaction(ReactionTierForHit(abPowerAttack, abSneakAttack, abBashAttack, abHitBlocked))
 endEvent
 
-function PlayStaggerReaction(float afDamage)
+int function ReactionTierForHit(bool abPowerAttack, bool abSneakAttack, bool abBashAttack, bool abHitBlocked)
+	int tier = 0
+
+	if (abBashAttack || abHitBlocked)
+		tier = 1
+	endif
+	if (abSneakAttack || abPowerAttack)
+		tier = 2
+	endif
+	if (abPowerAttack)
+		if (GetActorReference().GetActorValuePercentage("Health") < m_knockdownHealthFraction)
+			tier = 3
+		endif
+	endif
+
+	return tier
+endFunction
+
+function PlayStaggerReaction(int aiTier)
 	string animName
-	if (afDamage < m_staggerFlinch)
+	if (aiTier <= 0)
 		animName = m_animFlinch
 	else
-		if (afDamage < m_staggerStagger)
+		if (aiTier == 1)
 			animName = m_animStagger
 		else
-			if (afDamage < m_staggerLarge)
+			if (aiTier == 2)
 				animName = m_animLargeStagger
 			else
 				animName = m_animKnockdown
@@ -281,7 +326,7 @@ function PlayStaggerReaction(float afDamage)
 	endif
 
 	if (animName != "")
-		PlayAnimation(animName)
+		GetActorReference().PlayAnimation(animName)
 	endif
 endFunction
 

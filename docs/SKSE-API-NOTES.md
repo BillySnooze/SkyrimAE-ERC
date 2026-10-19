@@ -53,18 +53,43 @@ Registered names: `ERC_GetFloat`, `ERC_GetInt`, `ERC_GetBool`, `ERC_GetString`,
 | Hit-stop timescale apply | `ApplyTimeScale()` stub | needs the game timescale accessor |
 | Gamepad dodge input | `[HOOK-1]` | Papyrus `Input` is keyboard only |
 
+## Script attachment (why the script extends `ReferenceAlias`)
+
+There is no way to attach a script to the player from code:
+
+- The SKSE plugin SDK has **no** `AttachScript` symbol (searched the whole SDK).
+- Skyrim's Papyrus has no runtime attach call.
+
+So `ERC_PlayerCombat` is a **quest ReferenceAlias** script, attached to an alias
+forced to the Player reference in a start-game-enabled quest. `Alias` provides
+`RegisterForSingleUpdate`, so the polling loop works unchanged; all actor calls go
+through `GetActorReference()`. See `docs/BUILD.md`, Part A.
+
 ## Validation status
 
 | Item | Result |
 |---|---|
-| `ERCMain.cpp` vs **genuine** SKSE 2.2.6 `PluginAPI.h` | ✅ compiles |
+| All three C++ TUs vs the **genuine SDK** | ✅ compile |
+| `ERC.dll` link against the SDK static libs | ✅ links, exports `SKSEPlugin_Load` + `SKSEPlugin_Version` |
 | All three C++ TUs vs mock SDK | ✅ compiles (`build-check.bat`) |
-| `ERCNatives.cpp` vs genuine SDK | ⚠️ cannot compile here — SKSE's `common/` submodule is absent from the distributed source tarball |
+| Papyrus compiled with the real compiler | ✅ **0 errors, 0 warnings** |
 | Papyrus structure | ✅ `tools/validate-psc.ps1` |
-| Papyrus compiled in CK | ❌ no Creation Kit installed |
+| `.esp` (quest + player alias) | ⚠️ Creation Kit step — see `docs/BUILD.md`, Part A |
+
+## Two API corrections found by compiling
+
+| Wrong | Right | Why |
+|---|---|---|
+| `weapon.GetWeight()` | `GetActorValue("InventoryWeight") / GetActorValue("CarryWeight")` | Skyrim's `Form` has **no** `GetWeight()` — it exists nowhere in 13,898 base scripts |
+| `w.GetDamage()` | `OnHit`'s `abPowerAttack` / `abSneakAttack` / `abBashAttack` / `abHitBlocked` | `Weapon` has **no** `GetDamage()` |
+
+Both were caught by compiling against the real script sources, not by inspection.
+A third, C++-side: native return types must be `SInt32`, because the SDK
+specialises `PackValue<UInt32>/<SInt32>` but not `PackValue<int>`.
 
 ## Runtime version
 
 The JOJ stock game is **1.6.1170**, which matches the bundled **SKSE 2.2.6**
-(Steam 1.6.1170). `ERC.dll` records `RUNTIME_VERSION_1_6_1170` in
-`SKSEPlugin_Version`, so SKSE will accept it.
+(Steam 1.6.1170). The SDK's `RUNTIME_VERSION_1_6_1170` is `0x01064920` (not
+`0x01061170` — the version digits are decimal), and `ERC.dll` records that value
+in `SKSEPlugin_Version`, so SKSE will accept it.

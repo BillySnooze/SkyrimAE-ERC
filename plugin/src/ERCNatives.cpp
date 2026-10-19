@@ -20,7 +20,7 @@ namespace
 		return ERCPlugin::Get().GetFloat(akKey.c_str());
 	}
 
-	int GetIntNative(StaticFunctionTag*, BSFixedString akKey)
+	SInt32 GetIntNative(StaticFunctionTag*, BSFixedString akKey)
 	{
 		return ERCPlugin::Get().GetInt(akKey.c_str());
 	}
@@ -42,7 +42,7 @@ namespace
 	}
 
 	// --- dodge taps (Papyrus polls this) ----------------------------------
-	int ConsumeDodgeTapNative(StaticFunctionTag*)
+	SInt32 ConsumeDodgeTapNative(StaticFunctionTag*)
 	{
 		return ERCPlugin::Get().ConsumeDodgeTap();
 	}
@@ -82,7 +82,7 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, float, BSFixedString>(
 		"ERC_GetFloat", cls, GetFloatNative, registry));
-	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, int, BSFixedString>(
+	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, SInt32, BSFixedString>(
 		"ERC_GetInt", cls, GetIntNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, bool, BSFixedString>(
 		"ERC_GetBool", cls, GetBoolNative, registry));
@@ -91,7 +91,7 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 	registry->RegisterFunction(new NativeFunction2<StaticFunctionTag, void, BSFixedString, float>(
 		"ERC_SetFloat", cls, SetFloatNative, registry));
 
-	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, int>(
+	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, SInt32>(
 		"ERC_ConsumeDodgeTap", cls, ConsumeDodgeTapNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
 		"ERC_RollStarted", cls, RollStartedNative, registry));

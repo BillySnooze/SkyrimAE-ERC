@@ -1,13 +1,16 @@
 # Build outputs (compiled binaries are not committed — see docs/BUILD.md)
 data/SKSE/Plugins/*.dll
+data/scripts/*.pex
 data/**/*.esp
 data/**/*.esm
 *.obj
 *.lib
+*.exp
 *.pdb
 
 # Third-party SKSE runtime/SDK downloads (not part of this mod)
 skse64_*/
+skse-sdk/
 
 # Scratch dir for genuine-header checks
 validation-tmp/

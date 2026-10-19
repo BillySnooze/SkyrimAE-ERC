@@ -1,0 +1,18 @@
+# Build outputs (compiled binaries are not committed — see docs/BUILD.md)
+data/SKSEPlugins/*.dll
+data/**/*.esp
+data/**/*.esm
+*.obj
+*.lib
+*.pdb
+
+# CMake / build trees
+build/
+cmake-build-*/
+out/
+.vs/
+.idea/
+
+# OS cruft
+Thumbs.db
+.DS_Store

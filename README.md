@@ -70,7 +70,7 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 3. **Integrate with JOJ** — follow `docs/JOJ-INTEGRATION.md`: disable BFCO's *player*
    dodge + hit-reaction records (verify each in CK), point ERC at your moveset's animation
    event names, and match the dodge key to JOJ's binding.
-4. **Launch via `skse_loader.exe`**, open the MCM (`~` → Elden Ring Combat), and tune.
+4. **Launch via `skse64_loader.exe`**, open the MCM (`~` → Elden Ring Combat), and tune.
 
 ## Repository layout
 

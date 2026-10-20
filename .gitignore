@@ -17,6 +17,10 @@ skse-sdk/
 # Upstream reference repo, cloned for comparison only
 ELDEN-RING-Combat-Rewrite/
 
+# A full local installation of the source game must never be committed: it is
+# tens of gigabytes of third-party content and has nothing to do with this mod.
+ELDEN RING/
+
 # A loose copy of data/ that someone renamed to ERC/ — the real install target is
 # the mod manager's folder, not the repo root.
 ERC/

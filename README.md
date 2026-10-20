@@ -49,8 +49,9 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 | Skyrim AE **1.6.1170** | everything | The JOJ stock game (`F:\Modlists\JOJ\Stock Game`). |
 | **SKSE 2.2.6** (for 1.6.1170) | loading `ERC.dll` | Must match the runtime exactly. |
 | **MCM Helper** | the settings menu | Ships with JOJ. |
-| **Creation Kit** | making the `.esp` | Compiles/ships the Papyrus script. |
+| **Creation Kit** | Papyrus compilation | Compiles `ERC_PlayerCombat.psc`. The `.esp` itself is built headlessly. |
 | **SKSE plugin SDK + MSVC** | building `ERC.dll` | See `docs/BUILD.md`. |
+| **houseCARL + skyrimck MCP** | authoring/verifying the `.esp` | Optional; `-Offline` uses a Python writer instead. |
 
 > **Both halves are required.** The Papyrus script calls `ERC_*` natives, so without
 > `ERC.dll` it throws on the first call — there is no silent partial mode.
@@ -61,10 +62,11 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
    ```powershell
    powershell -ExecutionPolicy Bypass -File tools\build.ps1
    ```
-   This produces `data/scripts/ERC_PlayerCombat.pex` and `data/SKSE/Plugins/ERC.dll`.
-   Then make the `.esp` in Creation Kit (Part A of `docs/BUILD.md`) and save it into `data/`.
-2. **Install** the `data/` contents (`scripts/`, `MCM/`, `SKSE/Plugins/ERC.dll`, the `.esp`)
-   into your mod manager as a normal mod, placed after BFCO in load order.
+   This produces `data/scripts/ERC_PlayerCombat.pex`, `data/SKSE/Plugins/ERC.dll`,
+   `data/EldenRingCombat.esp` and `data/SEQ/EldenRingCombat.seq` — a complete mod.
+2. **Install** the `data/` contents (`scripts/`, `MCM/`, `SKSE/Plugins/ERC.dll`, the
+   `.esp` and `SEQ/`) into your mod manager as a normal mod, placed after BFCO in
+   load order.
 3. **Integrate with JOJ** — follow `docs/JOJ-INTEGRATION.md`: disable BFCO's *player*
    dodge + hit-reaction records (verify each in CK), point ERC at your moveset's animation
    event names, and match the dodge key to JOJ's binding.
@@ -83,10 +85,14 @@ EldenRingCombat/
 │  ├─ src/      (ERCMain.cpp, ERCPlugin.cpp, ERCNatives.cpp)
 │  └─ validation/                           ← mock SDK + build-check.bat
 ├─ tools/
-│  ├─ build.ps1                             ← builds .pex + ERC.dll
+│  ├─ build.ps1                             ← builds .pex + ERC.dll + the .esp
+│  ├─ esp/                                  ← ESP authoring + byte-level verifier
+│  ├─ housecarl/                            ← the quest record spec (JSON)
+│  ├─ mcp/                                  ← stdio MCP client used by the build
+│  ├─ xedit/                                ← headless xEdit verifier
 │  └─ validate-psc.ps1                      ← Papyrus structural validator
 └─ docs/
-   ├─ BUILD.md                              ← build steps, CK quest+alias, SDK setup
+   ├─ BUILD.md                              ← build steps, the ESP pipeline, SDK setup
    ├─ SKSE-API-NOTES.md                     ← the SKSE API port and what remains
    └─ JOJ-INTEGRATION.md                    ← replacing BFCO player combat in JOJ
 ```
@@ -102,17 +108,20 @@ This repository contains **source code and documentation**, not prebuilt binarie
 - ✅ **`ERC.dll` builds and links** against the genuine SKSE 2.2.6 SDK
   (`Ez0n3/SKSE64AE-Plugins`, runtime `0x01064920`), exporting
   `SKSEPlugin_Load` + `SKSEPlugin_Version`.
-- ⚠️ **The `.esp` is still a Creation Kit step.** Skyrim has no API to attach a
-  script to the player, and the SKSE plugin API has no `AttachScript` call, so a
-  start-game-enabled quest + player alias must be made in CK. Part A of
-  `docs/BUILD.md` has the exact steps.
+- ✅ **The `.esp` builds too.** Skyrim has no API to attach a script to the player
+  and the SKSE plugin API has no `AttachScript` call, so the script needs a
+  start-game-enabled quest with a Player alias — and `tools\build.ps1` authors
+  that plugin headlessly through the houseCARL MCP server, writes its `.seq`, and
+  verifies it with three independent parsers (own byte reader, esper, xEdit).
+  `docs\BUILD.md` Part A documents the record and the two byte-level details that
+  are easy to get wrong.
 - ⚠️ **Two version-specific hooks remain** (`[HOOK-1]` per-frame tick/gamepad,
   `[HOOK-2]` i-frame damage nullification + timescale), because they need your
   exact runtime's addresses. See `docs/SKSE-API-NOTES.md`.
 - ✅ **Documentation:** build steps, JOJ integration guide, API notes, conflict checklist.
 
-So: validated source that compiles and links, plus a documented CK step for the
-one record that cannot be generated from code — not a drop-in prebuilt `.esp`.
+So: every artifact (`.pex`, `.dll`, `.esp`, `.seq`) is produced by one command
+from source — no binaries are committed, and nothing needs the Creation Kit UI.
 
 ## Credits & license
 

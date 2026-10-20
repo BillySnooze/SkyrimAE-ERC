@@ -1,129 +1,176 @@
 # Integrating ELDEN RING COMBAT into JOJ
 
-JOJ (Journals of Jyggalag) already overhauls combat with **BFCO** (Better Fighting
-and Combat Overhaul), For Honor / Wo Long movesets, **True Directional Movement**,
-and stamina-based dodge rolling. This mod's job is to take over the *player's*
-combat feel from BFCO — adding ER-style tap-to-roll i-frames, hit-stop, and
-4-tier stagger reactions — while leaving BFCO's damage numbers and enemy AI alone.
-
-> **Honesty note.** I built this against the public JOJ overview page, not your
-> installed list. The exact record/form IDs that BFCO uses for *player* dodge and
-> hit-reactions are internal to BFCO and I cannot see them from here. Wherever this
-> doc says "verify in CK," it means: open the relevant BFCO plugin in Creation Kit,
-> find the specific record, and confirm before you disable it. Do not bulk-disable
-> BFCO records on faith — that will break enemy combat.
+This doc was rewritten after inspecting an actual JOJ install (`F:\Modlists\JOJ`).
+The earlier version assumed BFCO owned the player's dodge and told you to disable
+BFCO records in the Creation Kit. **That was wrong** — BFCO is JOJ's *attack*
+framework, and the roll belongs to a separate stack. Don't disable BFCO records
+on the strength of the old instructions.
 
 ---
 
-## What ERC replaces (and what it doesn't)
+## What already provides the ELDEN RING feel in JOJ
 
-| System | Owner after integration | Notes |
+JOJ ships a complete ER-style dodge. Every piece is enabled in the
+`Journals of Jyggalag` profile:
+
+| Mod | Role | Values in the shipped install |
 |---|---|---|
-| Weapon damage / scaling | **BFCO** (unchanged) | ERC never touches damage numbers, per your requirement. |
-| Enemy AI attacks & reactions | **BFCO** (unchanged) | Leave all enemy records as-is. |
-| Player dodge roll + i-frames | **ERC** | Tap-to-roll with invincibility window. Disable BFCO's player roll. |
-| Player hit-stop on impact | **ERC** | Global timescale dip when a blow lands. |
-| Player stagger / guard-break tiers | **ERC** | 4-tier flinch→knockdown, driven by incoming damage vs thresholds. |
-| Lock-on strafing | **TDM** (unchanged) | TDM owns lock-on; ERC only picks facing-preserving roll variants. |
-| Movement / sprint | **BFCO/TDM** (unchanged) | Holding dodge = sprint stays as BFCO defines it. |
+| **TK Dodge RE** 0.55-rc3 | Script-free SKSE plugin: the roll itself, 4 directions, stamina, attack-cancel | `DodgeHotkey = 56` (Left Alt), `DodgeStamina = 10`, `EnableDodgeAttackCancel = true`, `StepDodge = false`, `defaultDodgeEvent = TKDodgeBack` |
+| **IFrame Generator RE AE** | Actual invincibility frames | driven by TK Dodge's `iFrameDuration = 0.3` |
+| **TK Dodge SE** | The roll clips (`Animations\TKDodge\*.hkx`) | active |
+| **Dynamic Dodge Animation** | 192 `.hkx` via OAR — weapon/state-aware roll variants | active |
+| **Heavy Armor Dodge**, **Low Level dodge** | Equip-load / level-based roll variants | active |
+| **TK dodge firstperson 8 ways dodge** | First-person rolls | active |
+| **TK Dodge Animation Pandora Fix Patch**, **Pandora Behaviour Engine Plus**, **JOJ - Pandora Output** | Register the dodge clips into the behaviour graph | active |
 
-The cleanest mental model: **ERC is a thin "player feel" layer on top of JOJ's
-existing combat.** It does not replace the movesets or damage — it reshapes timing,
-dodge invincibility, impact freeze, and hit reactions for the player character only.
+The behaviour graph events are `TKDodgeForward`, `TKDodgeBack`, `TKDodgeLeft`,
+`TKDodgeRight` — visible in `TK Dodge RE\Nemesis_Engine\mod\tkds\1hm_behavior\#tkds$5.txt`,
+which binds `TKDodgeRight` to `Animations\TKDodge\Stepdodgeright.hkx`.
+
+**So the dodge you asked ERC to build already exists, with real animations and
+real i-frames.** ERC's job is the layer TK Dodge does not cover.
+
+---
+
+## What ERC owns (and what it deliberately doesn't)
+
+| System | Owner | Notes |
+|---|---|---|
+| Weapon damage / scaling | **BFCO** (unchanged) | ERC never touches damage numbers. |
+| Enemy AI attacks & reactions | **BFCO** (unchanged) | Leave all records as-is. |
+| Player dodge roll, stamina, i-frames | **TK Dodge RE + IFrame Generator** | ERC detects TK Dodge RE and stands down. |
+| Player hit-stop on impact | **ERC** | Global timescale dip when a blow lands. |
+| Player stagger / guard-break tiers | **ERC** | 4-tier flinch→knockdown from `OnHit`. |
+| Lock-on | **TDM** (unchanged) | Rolling direction is TK Dodge's. |
+
+### Why ERC defers instead of competing
+
+Three things went wrong when ERC rolled on its own in JOJ:
+
+1. **The animation event didn't exist.** ERC called
+   `PlayAnimation("ERC_Roll_Light_Front")`. Grepping every config in the install
+   finds that string only in ERC's own `config.json` — no behaviour graph defines
+   it, so the event plays nothing. This is why the mod appeared to "do nothing"
+   even with the DLL loaded and the quest running.
+2. **Both mods polled Left Alt.** TK Dodge RE's `DodgeHotkey` is 56; ERC's
+   `DodgeKeyCode` defaulted to 56.
+3. **Both billed stamina** — 10 from TK Dodge plus 12 from ERC on a single press.
+
+ERC now asks `ERC_HasTKDodge()` (the DLL checks for
+`Data\SKSE\Plugins\TK Dodge RE.ini`) and, when the MCM toggle
+**Defer Dodge to TK Dodge RE** is on (the default), it stops polling the key,
+skips its own roll and its stamina deduction, and leaves the roll alone.
+It keeps the update loop, because that is what resets tap state safely if you
+turn deferral off mid-game.
+
+If TK Dodge RE is **not** installed, deferral is automatically inactive and ERC
+runs its own roll — the fallback path, with the caveats in Step 3 below.
 
 ---
 
 ## Step 1 — Load order
 
-- **`EldenRingCombat.esp`** loads **after BFCO's plugin(s)** so that, where a record
-  is shared, ERC's version wins for the player. (In practice ERC adds almost no
-  conflicting records — it's mostly scripts + one SKSE plugin — so load-order
-  sensitivity is low. Place it in the "gameplay/combat" group after BFCO.)
-- **`ERC.dll`** lives in `Data/SKSE/Plugins/` and is loaded by SKSE independently of
-  the `.esp` load order. It must be present for the full experience (see BUILD.md).
+- `EldenRingCombat.esp` after BFCO's plugins (in practice ERC adds almost no
+  conflicting records — scripts, one SKSE plugin, one quest — so sensitivity is
+  low). Put it in the gameplay/combat group after BFCO.
+- `ERC.dll` goes in `Data/SKSE/Plugins/` and is loaded by SKSE independently of
+  load order.
+- ERC must load **after** TK Dodge RE in MO2 only so that nothing overwrites its
+  own files; they don't share any file.
 
-In Wabbajack/MO2, add the mod as a normal profile entry; the DLL ships inside the
-mod's `Data/SKSE/Plugins/` folder and is picked up automatically.
+## Step 2 — Do NOT disable BFCO's dodge
 
-## Step 2 — Disable BFCO's *player* dodge & hit-reactions (verify in CK)
+There is none to disable. BFCO drives attacks/movesets (For Honor, Wo Long,
+MCO/SCAR packs); the roll is TK Dodge RE. Disabling BFCO records to "give ERC the
+dodge" would break the movesets and enemy combat for nothing.
 
-This is the part that actually "replaces" BFCO for the player. In Creation Kit,
-open the BFCO plugin(s) and:
+Likewise, leave TK Dodge RE, IFrame Generator, and the OAR dodge packs enabled —
+they are the animations you want.
 
-1. **Player dodge roll.** Find the record/form that defines the *player's* dodge/roll
-   action (BFCO typically rebinds the dodge key to a custom roll animation + script).
-   Disable it for the player only. *(Do NOT disable enemy dodge records.)*
-2. **Player hit-reactions / stagger.** Find BFCO's player flinch/stagger/knockdown
-   animations or the script that triggers them, and disable for the player. ERC now
-   owns these via its `OnHit` path.
-3. **Leave everything else** (damage, enemy AI, movement, sprint) enabled.
+## Step 3 — ERC's fallback roll (only if TK Dodge RE is absent)
 
-> If BFCO's player combat is driven by a single master script/form rather than many
-> records, disabling that one form may be enough — check what it references first.
-> The goal is: the player no longer uses BFCO's roll/stagger; ERC does. Enemies keep
-> using BFCO untouched.
+If you run ERC without TK Dodge RE, ERC polls `DodgeKeyCode` itself and calls
+`PlayAnimation` with the names on the MCM **Animations** page. Those names must
+exist in the behaviour graph or nothing plays. The shipped defaults
+(`ERC_Roll_Light_Front`, `ERC_Roll_Medium_Front`, `ERC_Roll_Heavy_Front`) are
+**placeholders that no installed mod defines**, so on the fallback path you must
+either:
 
-## Step 3 — Point ERC at JOJ's moveset animations (MCM / ini)
+- point them at clips that do exist (e.g. `TKDodgeForward` if you have TK Dodge's
+  behaviour patches without the TK Dodge RE plugin), or
+- add your own clips via OAR/DAR/Pandora under a `TKDodge`-style folder and name
+  the events accordingly, or
+- install TK Dodge RE and let deferral take over (recommended).
 
-ERC plays animation *events* by name. Its defaults (`HitReaction_Flinch`,
-`ERC_Roll_Light_Front`, …) are placeholders. Set them to the **actual event names**
-that JOJ's For Honor / Wo Long movesets provide:
+Directional variants are derived by appending `_Back` / `_Left` / `_Right` to the
+base name, and only when **Enable Lock-On Rolls** is on.
 
-- In CK, open the moveset plugin and read each roll / hit-reaction animation's
-  **event name** (the string the engine matches on).
-- Enter those strings on the MCM **Animations** page, or in
-  `Data/SKSE/Plugins/EldenRingCombat.ini` under the keys
-  `AnimFlinch`, `AnimStagger`, `AnimLargeStagger`, `AnimKnockdown`,
-  `RollLightFront`, `RollMediumFront`, `RollHeavyFront`. (Directional variants are
-  derived by appending `_Back/_Left/_Right`.)
+## Step 4 — Tune the roll where it actually lives
 
-If a name is wrong, ERC degrades gracefully — that specific animation simply doesn't
-play (no crash). So you can iterate: set a name, test in-game, adjust.
+With deferral on, the roll's stamina and i-frame window come from
+`Data\SKSE\Plugins\TK Dodge RE.ini`:
 
-## Step 4 — Match the dodge key to JOJ's binding
+```ini
+DodgeHotkey = 56          ; 56 = Left Alt
+DodgeStamina = 10
+iFrameDuration = 0.3      ; needs I-Frame Generator RE
+EnableDodgeAttackCancel = true
+```
 
-Dodge input is detected **in Papyrus** by polling a DirectInput scan code every
-0.03s (`Input.IsKeyPressed`), then splitting tap (roll) from hold (sprint). Set
-`DodgeKeyCode` in the MCM to whatever JOJ binds dodge to.
+Edit those, then restart the game (TK Dodge RE reads them at launch). ERC's
+`Roll Stamina Cost`, `I-Frame Fraction` and `Dodge Key Code` sliders are labelled
+"(ERC roll only)" and do nothing while deferring — they exist for the fallback.
 
-- Default is **56 = Left Alt** (tap = roll, hold = Skyrim's native sprint).
-- Other common codes: `57` = Space, `42` = Left Shift, `29` = Left Ctrl.
+ERC logs what it found at load, so you can confirm the hand-off:
 
-Gamepad is **not** covered by Papyrus (it has no gamepad query). Controller users
-need the C++ input hook (`[HOOK-1]` in BUILD.md), which also supplies a lock-on
-direction. Until then, rolls on a controller won't trigger.
+```
+[ERC] TK Dodge RE detected (hotkey 56, stamina 10, i-frames 0.3s) - ERC defers the roll to it
+```
 
-## Step 5 — Tune via the MCM
+That line goes to `OutputDebugString`, i.e. it shows in DebugView and in MO2's
+SKSE plugin log capture, not in `Papyrus.0.log`.
 
-Once running under `skse_loader.exe`, open the **Elden Ring Combat** MCM and tune:
+## Step 5 — Tune ERC via the MCM
 
-- **Combat page:** dodge key code, sprint-hold time, roll stamina cost, i-frame
-  fraction, hit-stop duration + timescale, and the feature toggles.
-- **Stagger page:** the three reaction thresholds (flinch / stagger / large).
-- **Movement page:** equip-load weight cuts and per-tier roll durations
-  (heavier = longer/slower).
-- **Animations page:** the animation event names to match JOJ's moveset.
+Open **Elden Ring Combat** in the MCM:
 
-Defaults are ER-derived starting points; adjust to taste. MCM Helper persists
-choices to `Data/MCM/Settings/EldenRingCombat.ini`, which `ERC.dll` merges over
-`Data/SKSE/Plugins/EldenRingCombat.ini` on load and on game load.
+- **Combat page:** Defer Dodge to TK Dodge RE, sprint-hold time, hit-stop duration
+  and timescale, and the feature toggles. (Roll stamina / i-frame / key are
+  fallback-only.)
+- **Stagger page:** the knockdown health fraction.
+- **Movement page:** equip-load cuts and per-tier roll durations (fallback only).
+- **Animations page:** stagger and roll animation event names.
+
+MCM Helper persists choices to `Data/MCM/Settings/EldenRingCombat.ini`, which
+`ERC.dll` merges over `Data/SKSE/Plugins/EldenRingCombat.ini` on load and on game
+load.
+
+## Step 6 — Animation names for the stagger tiers
+
+`OnHit`-driven reactions call `PlayAnimation` with
+`AnimFlinch` / `AnimStagger` / `AnimLargeStagger` / `AnimKnockdown`. The defaults
+(`HitReaction_Flinch` etc.) are **unverified placeholders** — the same class of
+mistake as `ERC_Roll_*`. If stagger reactions don't visibly play, set these to
+events your install actually defines (check the moveset/OAR mods' behaviour
+configs), or turn off **Enable Guard Break** until you have names that exist.
 
 ---
 
-## Conflict checklist (things that can fight each other)
+## Conflict checklist
 
 | Potential conflict | Resolution |
 |---|---|
-| BFCO player roll vs ERC roll both firing | Disable BFCO's *player* dodge record (Step 2). Enemies unaffected. |
-| BFCO player stagger vs ERC stagger double-playing | Disable BFCO's *player* hit-reaction trigger (Step 2). ERC owns it now. |
-| TDM lock-on vs ERC directional rolls | No conflict, but note: Papyrus cannot read TDM's target bearing, so with the current keyboard polling every roll uses the front variant. Directional rolls need the `[HOOK-1]` input hook. |
-| Two mods setting `fTimeScale` (hit-stop) | If another mod also dips timescale, hit-stops can stack/override. ERC saves & restores the prior value, so it's well-behaved — but avoid running two hit-stop mods at once. |
-| Stamina cost double-deduction | BFCO may already deduct stamina for its roll. Since you disable BFCO's player roll (Step 2), only ERC deducts. If you keep both, lower one of the costs to avoid a double drain. |
+| TK Dodge RE vs ERC both rolling on Left Alt | Handled: ERC defers by default. If you turn deferral off while TK Dodge RE is installed, you will roll twice and pay both stamina costs. |
+| Two hit-stop mods | ERC saves and restores the prior timescale, but avoid stacking two hit-stop mods. |
+| Stagger double-playing (BFCO hit-reactions + ERC) | If both fire, unset ERC's stagger names or disable **Enable Guard Break**; BFCO's moveset reactions are animation-authored and usually look better. |
+| `iFrameDuration` ignored | I-Frame Generator RE must be installed (it is, in JOJ) — TK Dodge RE does not provide i-frames itself. |
 
 ## Testing in JOJ
 
-1. Confirm `ERC.dll` loads (SKSE log / MCM present).
-2. In combat, tap dodge → expect an ER-style roll with i-frames (attacks whiff during it).
-3. Land a hit on an enemy → expect a brief world freeze (hit-stop).
-4. Take hits of varying size → expect flinch / stagger / large-stagger / knockdown in order.
-5. Verify enemies still behave exactly as BFCO intended (you only changed the player).
+1. `skse64.log` (or DebugView) shows the `[ERC] TK Dodge RE detected …` line.
+2. Papyrus log shows no `Unbound native function` from `ERC_PlayerCombat`.
+3. MCM shows **Elden Ring Combat** with Combat / Stagger / Movement / Animations.
+4. Tap Left Alt → one roll, one stamina cost (10, not 22), with i-frames.
+5. Take a hit → flinch/stagger per your configured names.
+6. Hit-stop still needs `[HOOK-2]` (see `docs/SKSE-API-NOTES.md`); until then no
+   freeze is expected.

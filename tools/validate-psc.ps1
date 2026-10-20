@@ -52,7 +52,11 @@ foreach ($l in $code) {
 $eventOpen   = ($code | Where-Object { $_ -match '^\s*[Ee]vent\s+\w+\s*\(' }).Count
 $eventClose  = ($code | Where-Object { $_ -match '^\s*[Ee]ndEvent\b' }).Count
 $funcOpen    = ($code | Where-Object { $_ -match '^\s*(?:[A-Za-z_]\w*\s+)?[Ff]unction\s+\w+\s*\(' }).Count
-$funcNative  = ($code | Where-Object { $_ -match '^\s*(?:[A-Za-z_]\w*\s+)?[Ff]unction\s+\w+\s*\(.*\)\s+native\s*$' }).Count
+# Native declarations take no body, so they must be excluded from the balance.
+# Papyrus spells them `<type> function Name(...) global native`, so the `global`
+# modifier has to be allowed for -- without it every native counted as an
+# unclosed body and the check reported a permanent false failure.
+$funcNative  = ($code | Where-Object { $_ -match '^\s*(?:[A-Za-z_]\w*\s+)?[Ff]unction\s+\w+\s*\(.*\)\s+(?:global\s+)?native\s*$' }).Count
 $funcClose   = ($code | Where-Object { $_ -match '^\s*[Ee]ndFunction\b' }).Count
 
 if ($eventOpen -ne $eventClose) {

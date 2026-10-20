@@ -3,11 +3,16 @@ scriptname ERC_PlayerCombat extends ReferenceAlias hidden
 ;  ELDEN RING COMBAT (ERC) — Player Combat Feel
 ; ----------------------------------------------------------------------------
 ;  Translates the *feel* of ELDEN RING player combat into Skyrim AE (1.6.1170):
-;    - Tap-to-dodge rolls with invincibility frames (i-frames)
-;    - Equip-load-scaled roll speed (light / medium / heavy)
 ;    - Hit-stop on impact (handled natively by ERC.dll)
 ;    - Guard break + 4-tier hit reactions (flinch -> knockdown)
-;    - Lock-on-aware roll animations
+;    - Equip-load-scaled roll speed, for lists without a dodge framework
+;
+;  THE ROLL IS USUALLY NOT ERC'S JOB. In JOJ the roll comes from TK Dodge RE +
+;  I-Frame Generator + OAR animation packs, which are already installed and
+;  already give ER-style rolls with real animations and i-frames. ERC detects
+;  TK Dodge RE and defers to it (see m_deferDodge), because running both bills
+;  the same roll twice and ERC's animation events exist in no behaviour graph.
+;  ERC's own roll is the fallback for lists that have no dodge framework.
 ;
 ;  DAMAGE IS UNTOUCHED. This mod never changes weapon damage, scaling, or any of
 ;  Skyrim's combat numbers — it only reshapes timing, movement and reactions.
@@ -18,9 +23,7 @@ scriptname ERC_PlayerCombat extends ReferenceAlias hidden
 ;  (Part A). Skyrim has no way to attach a script to the player without such a
 ;  plugin, and the SKSE plugin API cannot do it either.
 ;
-;  REQUIRES ERC.dll (i-frames, hit-stop). Dodge *input* is detected here in
-;  Papyrus by polling the dodge key, so rolls work without a version-specific
-;  C++ input hook; the script only calls into the plugin for the i-frame window.
+;  REQUIRES ERC.dll (settings, i-frames, hit-stop).
 ;
 ;  Why polling: the official SKSE plugin API has no simple "raise a Papyrus
 ;  event" call (that needs BSScript/VM internals), so Papyrus drives the timing.
@@ -34,6 +37,21 @@ bool  m_enableRolls       = true
 bool  m_enableHitStop     = true
 bool  m_enableGuardBreak  = true
 bool  m_enableLockOnRolls = true
+
+; --- Dodge ownership --------------------------------------------------------
+; JOJ's roll comes from TK Dodge RE (script-free SKSE plugin: roll clip, stamina
+; cost, and — with I-Frame Generator — the invincibility window). It polls its
+; own hotkey, which defaults to the same scan code ERC used, so if both run the
+; player rolls twice and pays stamina twice. Deferring means ERC leaves the roll
+; entirely to TK Dodge and contributes only what TK Dodge does not do: hit-stop
+; and the 4-tier stagger reactions.
+;
+; The setting is a preference; m_tkdodgePresent is what the DLL actually found.
+; ERC only defers when both are true, so a machine without TK Dodge still gets
+; a working (if animation-less) roll instead of nothing.
+bool  m_deferDodgeToTKdodge = true
+bool  m_tkdodgePresent      = false
+bool  m_deferDodge          = false
 
 string m_animFlinch       = "HitReaction_Flinch"
 string m_animStagger      = "HitReaction_Stagger"
@@ -87,6 +105,7 @@ event OnInit()
 		return
 	endif
 	RefreshSettings()
+	RegisterForMenu("Mod Config")
 	RegisterForSingleUpdate(UPDATE_INTERVAL)
 endEvent
 
@@ -96,7 +115,21 @@ event OnPlayerLoadGame()
 		return
 	endif
 	RefreshSettings()
+	RegisterForMenu("Mod Config")
 	RegisterForSingleUpdate(UPDATE_INTERVAL)
+endEvent
+
+; "Mod Config" is SkyUI's MCM. Re-reading on close is what makes the Defer Dodge
+; toggle take effect without loading a save, since ownership of the roll cannot
+; change while the menu is open anyway.
+event OnMenuOpenCloseEvent(string asMenuName, bool abOpening)
+	if (asMenuName != "Mod Config" || abOpening)
+		return
+	endif
+	if (!IsPlayerAlias())
+		return
+	endif
+	RefreshSettings()
 endEvent
 
 ; Guard: this alias must actually point at the player. If it does not, every
@@ -111,7 +144,12 @@ event OnUpdate()
 		return
 	endif
 
-	PollDodgeTap()
+	if (m_deferDodge)
+		; TK Dodge RE owns the key; ERC must not poll it or it drains twice.
+		ResetDodgeInput()
+	else
+		PollDodgeTap()
+	endif
 
 	if (m_midRoll && Utility.GetCurrentRealTime() >= m_rollEndTime)
 		m_midRoll = false
@@ -119,6 +157,14 @@ event OnUpdate()
 
 	RegisterForSingleUpdate(UPDATE_INTERVAL)
 endEvent
+
+; Drop any in-flight tap state. Called every update while deferring, so that
+; re-enabling ERC's own roll mid-game cannot fire a tap recorded minutes ago.
+function ResetDodgeInput()
+	m_keyWasDown  = false
+	m_keyDownTime = 0.0
+	m_midRoll     = false
+endFunction
 
 ; Read every tunable from the plugin (which merges its ini and MCM Helper's).
 function RefreshSettings()
@@ -149,6 +195,18 @@ function RefreshSettings()
 
 	m_dodgeKeyCode      = ERC_PlayerCombat.ERC_GetInt("DodgeKeyCode")
 	m_sprintHoldSeconds = ERC_PlayerCombat.ERC_GetFloat("SprintHoldSeconds")
+
+	; Who owns the roll this session.
+	m_deferDodgeToTKdodge = ERC_PlayerCombat.ERC_GetBool("DeferDodgeToTKDodge")
+	m_tkdodgePresent      = ERC_PlayerCombat.ERC_HasTKDodge()
+	m_deferDodge          = m_deferDodgeToTKdodge && m_tkdodgePresent
+
+	if (m_deferDodge)
+		ResetDodgeInput()
+		Debug.Trace("ERC: TK Dodge RE present - deferring the roll (hit-stop + stagger only)")
+	else
+		Debug.Trace("ERC: running ERC's own roll (no TK Dodge RE detected)")
+	endif
 endFunction
 
 ; ============================================================================
@@ -179,6 +237,12 @@ function PollDodgeTap()
 endFunction
 
 function DoRoll(int aiDirection)
+	if (m_deferDodge)
+		; TK Dodge RE performs the roll, with its own animation, stamina cost and
+		; i-frames. Doing it here as well would double both.
+		return
+	endif
+
 	if (!m_enableRolls || m_midRoll)
 		return
 	endif
@@ -360,6 +424,10 @@ function ERC_SetFloat(string akKey, float afValue) global native
 ; DLL input hook that can also supply a direction (lock-on aware).
 ; Currently unused by the script, which polls the key directly instead.
 int function ERC_ConsumeDodgeTap() global native
+
+; True when TK Dodge RE is installed (ERC.dll looks for its ini). When it is,
+; ERC defers the roll to it and only contributes hit-stop and stagger.
+bool function ERC_HasTKDodge() global native
 
 ; Open the i-frame window for the first IframeFraction of afDurationSeconds.
 function ERC_RollStarted(float afDurationSeconds) global native

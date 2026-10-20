@@ -47,6 +47,14 @@ namespace
 		return ERCPlugin::Get().ConsumeDodgeTap();
 	}
 
+	// --- dodge provider ----------------------------------------------------
+	// True when TK Dodge RE is installed. Papyrus uses this to decide whether
+	// ERC should drive its own roll or leave the roll to TK Dodge.
+	bool HasTKdodgeNative(StaticFunctionTag*)
+	{
+		return ERCPlugin::Get().HasTKdodge();
+	}
+
 	// --- i-frames / hit-stop ----------------------------------------------
 	void RollStartedNative(StaticFunctionTag*, float afDurationSeconds)
 	{
@@ -81,6 +89,8 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 
 	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, SInt32>(
 		"ERC_ConsumeDodgeTap", cls, ConsumeDodgeTapNative, registry));
+	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, bool>(
+		"ERC_HasTKDodge", cls, HasTKdodgeNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
 		"ERC_RollStarted", cls, RollStartedNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(

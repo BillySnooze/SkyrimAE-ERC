@@ -35,6 +35,15 @@ public:
 	std::string GetString(const std::string& key) const;
 	void        SetFloat(const std::string& key, float value);
 
+	// --- dodge provider detection --------------------------------------------
+	// JOJ's roll is TK Dodge RE: a script-free SKSE plugin that owns the roll
+	// clip, the stamina cost and (with I-Frame Generator) the invincibility
+	// window. Its hotkey defaults to the same scan code ERC used to poll, so
+	// when it is installed ERC stands down from its own roll instead of billing
+	// stamina twice and playing an animation event no behaviour graph defines.
+	bool  HasTKdodge() const { return _tkdodgePresent; }
+	float TKdodgeFloat(const std::string& key) const;
+
 	// --- dodge taps -----------------------------------------------------------
 	// Filled by the input hook ([HOOK-1]); drained by Papyrus polling.
 	void QueueDodgeTap(int direction);   // 0 front, 1 back, 2 left, 3 right
@@ -57,6 +66,11 @@ private:
 	ERCPlugin() = default;
 
 	std::map<std::string, std::string> _settings;
+
+	// TK Dodge RE's own ini, read only so the script can decide whether to
+	// defer. ERC never writes to it.
+	bool _tkdodgePresent = false;
+	std::map<std::string, std::string> _tkdodge;
 
 	bool  _inIframe      = false;
 	double _iframeEndTime = 0.0;

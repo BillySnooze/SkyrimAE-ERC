@@ -14,9 +14,16 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 
 ## Features
 
-- **Tap-to-dodge rolls with i-frames.** Tap the dodge button to roll; hold it to sprint.
-  During the invincible portion of a roll, incoming *physical* hits are nullified —
-  exactly like ELDEN RING's dodge i-frames. (Magic/spells still get through.)
+- **ER-style rolls with i-frames — delegated, not duplicated.** In JOJ the roll
+  comes from **TK Dodge RE** (script-free SKSE plugin) plus **I-Frame Generator**
+  and OAR animation packs. ERC detects TK Dodge RE and hands the roll over, so you
+  get the real animations and a real 0.3 s invincibility window that are already
+  in your list. See `docs/JOJ-INTEGRATION.md` for why this is the right split:
+  ERC's own animation events exist in no behaviour graph, and running both would
+  bill the same roll twice.
+- **ERC's own roll is the fallback.** On a list with no dodge framework, ERC polls
+  the dodge key itself (tap = roll, hold = sprint) and drives its own clip names.
+  Those names must exist in a behaviour graph — see Step 3 of the integration doc.
 - **Hit-stop on impact.** When a blow lands, both attacker and target freeze for a few
   frames via a global timescale dip — the "impact crunch" that makes ER hits feel weighty.
 - **4-tier hit reactions.** Incoming hits map to flinch → stagger → large stagger →
@@ -26,12 +33,11 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 - **Equip-load-scaled rolls.** Light / medium / heavy load — the ratio of carried
   weight (`InventoryWeight`) to max carry weight (`CarryWeight`), the same measure
   ELDEN RING uses — selects a roll variant; heavier loads roll longer and slower.
-- **Lock-on-aware roll variants.** Directional roll animations exist (`_Back/_Left/_Right`),
-  but Papyrus can't read TDM's target bearing — so the current keyboard polling always uses
-  the front variant. Directional rolls need the `[HOOK-1]` input hook (see `docs/BUILD.md`).
-- **Full MCM tuning.** Dodge key, sprint-hold time, stamina costs, i-frame fraction,
-  hit-stop duration/strength, knockdown health fraction, equip-load cuts, roll durations, animation
-  names, and feature toggles — all live.
+  (With TK Dodge RE installed, JOJ's Heavy Armor Dodge / Low Level dodge packs
+  already provide the variants; ERC's version applies on the fallback path.)
+- **Full MCM tuning.** Dodge deferral, dodge key, sprint-hold time, stamina costs, i-frame
+  fraction, hit-stop duration/strength, knockdown health fraction, equip-load cuts, roll durations, animation
+  names, and feature toggles.
 
 ## What it is NOT
 
@@ -49,6 +55,7 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 | Skyrim AE **1.6.1170** | everything | The JOJ stock game (`F:\Modlists\JOJ\Stock Game`). |
 | **SKSE 2.2.6** (for 1.6.1170) | loading `ERC.dll` | Must match the runtime exactly. |
 | **MCM Helper** | the settings menu | Ships with JOJ. |
+| **TK Dodge RE + I-Frame Generator** | the animated roll | Ships with JOJ. Detected automatically; ERC stands down from its own roll when present. |
 | **Creation Kit** | Papyrus compilation | Compiles `ERC_PlayerCombat.psc`. The `.esp` itself is built headlessly. |
 | **SKSE plugin SDK + MSVC** | building `ERC.dll` | See `docs/BUILD.md`. |
 | **houseCARL + skyrimck MCP** | authoring/verifying the `.esp` | Optional; `-Offline` uses a Python writer instead. |
@@ -67,9 +74,9 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 2. **Install** the `data/` contents (`scripts/`, `MCM/`, `SKSE/Plugins/ERC.dll`, the
    `.esp` and `SEQ/`) into your mod manager as a normal mod, placed after BFCO in
    load order.
-3. **Integrate with JOJ** — follow `docs/JOJ-INTEGRATION.md`: disable BFCO's *player*
-   dodge + hit-reaction records (verify each in CK), point ERC at your moveset's animation
-   event names, and match the dodge key to JOJ's binding.
+3. **Integrate with JOJ** — follow `docs/JOJ-INTEGRATION.md`: leave TK Dodge RE and
+   I-Frame Generator enabled (ERC defers the roll to them automatically), and match
+   the stagger animation event names to what your install defines.
 4. **Launch via `skse64_loader.exe`**, open the MCM (`~` → Elden Ring Combat), and tune.
 
 ## Repository layout
@@ -117,7 +124,14 @@ This repository contains **source code and documentation**, not prebuilt binarie
   are easy to get wrong.
 - ⚠️ **Two version-specific hooks remain** (`[HOOK-1]` per-frame tick/gamepad,
   `[HOOK-2]` i-frame damage nullification + timescale), because they need your
-  exact runtime's addresses. See `docs/SKSE-API-NOTES.md`.
+  exact runtime's addresses. See `docs/SKSE-API-NOTES.md`. Note that i-frames in
+  JOJ come from **IFrame Generator**, not from ERC's `[HOOK-2]`, so playable
+  invincibility is already there.
+- ⚠️ **No ELDEN RING animation data ships here, by design.** ER animations are
+  Havok 2016/2018 `.hkx` inside `.anibnd.dcx` on FromSoft's skeleton; Skyrim SE
+  needs Havok 2010 `.hkx` on the `NPC …` rig plus a behaviour-graph entry, and
+  redistribution of FromSoftware's clips isn't something this project does. The
+  animated roll comes from TK Dodge RE / OAR packs already in the modlist.
 - ✅ **Documentation:** build steps, JOJ integration guide, API notes, conflict checklist.
 
 So: every artifact (`.pex`, `.dll`, `.esp`, `.seq`) is produced by one command

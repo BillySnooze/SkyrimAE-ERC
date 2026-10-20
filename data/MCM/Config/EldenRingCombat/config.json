@@ -10,24 +10,31 @@
       "content": [
         { "type": "header", "text": "Dodge" },
         {
+          "id": "bDeferDodgeToTKDodge:Combat",
+          "type": "toggle",
+          "text": "Defer Dodge to TK Dodge RE",
+          "help": "Recommended ON. TK Dodge RE performs the roll with its own animation, stamina cost and i-frames (via I-Frame Generator). ERC then adds only hit-stop and stagger. Leave ON whenever TK Dodge RE is installed: both mods poll the same key, so turning this OFF as well makes you roll twice and pay stamina twice.",
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
+        },
+        {
           "id": "fRollStaminaCost:Combat",
           "type": "slider",
-          "text": "Roll Stamina Cost",
-          "help": "Stamina spent when a dodge roll starts. ELDEN RING default is 12.",
+          "text": "Roll Stamina Cost (ERC roll only)",
+          "help": "Only used when ERC runs its own roll, i.e. Defer Dodge is OFF. With TK Dodge RE the cost is DodgeStamina in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
           "valueOptions": { "min": 0, "max": 50, "step": 1, "sourceType": "ModSettingFloat", "defaultValue": 12 }
         },
         {
           "id": "fIframeFraction:Combat",
           "type": "slider",
-          "text": "I-Frame Fraction",
-          "help": "Fraction of the roll that is invincible. 0.55 = first 55% of the roll.",
+          "text": "I-Frame Fraction (ERC roll only)",
+          "help": "Only used when ERC runs its own roll. With TK Dodge RE the window is iFrameDuration in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
           "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.55 }
         },
         {
           "id": "iDodgeKeyCode:Combat",
           "type": "slider",
-          "text": "Dodge Key Code",
-          "help": "DirectInput scan code for dodge. 56 = Left Alt (tap to roll, hold to sprint), 57 = Space, 42 = Left Shift.",
+          "text": "Dodge Key Code (ERC roll only)",
+          "help": "Only polled when Defer Dodge is OFF. TK Dodge RE uses its own DodgeHotkey (56 = Left Alt) in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
           "valueOptions": { "min": 1, "max": 255, "step": 1, "sourceType": "ModSettingInt", "defaultValue": 56 }
         },
         {
@@ -40,8 +47,8 @@
         {
           "id": "bEnableRolls:Combat",
           "type": "toggle",
-          "text": "Enable Dodge Rolls",
-          "help": "Turn the tap-to-roll system on or off.",
+          "text": "Enable ERC's Own Roll",
+          "help": "Master switch for ERC's fallback roll. Ignored while Defer Dodge to TK Dodge RE is ON.",
           "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         },
         {

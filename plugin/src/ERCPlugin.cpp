@@ -23,6 +23,7 @@ static void ERC_Log(const std::string& msg)
 // ----------------------------------------------------------------------------
 static const char* kPluginIni = "Data\\SKSE\\Plugins\\EldenRingCombat.ini";
 static const char* kMcmIni    = "Data\\MCM\\Settings\\EldenRingCombat.ini";
+static const char* kTKdodgeIni = "Data\\SKSE\\Plugins\\TK Dodge RE.ini";
 
 ERCPlugin& ERCPlugin::Get()
 {
@@ -58,6 +59,7 @@ static void Defaults(std::map<std::string, std::string>& s)
 	s["EnableHitStop"]          = "true";
 	s["EnableGuardBreak"]       = "true";
 	s["EnableLockOnRolls"]      = "true";
+	s["DeferDodgeToTKDodge"]    = "true";
 
 	s["AnimFlinch"]             = "HitReaction_Flinch";
 	s["AnimStagger"]            = "HitReaction_Stagger";
@@ -86,6 +88,14 @@ static std::string Trim(const std::string& in)
 	}
 	const auto e = in.find_last_not_of(ws);
 	return in.substr(b, e - b + 1);
+}
+
+// Presence check that works through MO2's virtual file system, exactly like the
+// ini reads above: the plugin runs with the game root as its working directory.
+static bool FileExists(const char* path)
+{
+	std::ifstream file(path);
+	return file.is_open();
 }
 
 // Reads a simple "key = value" ini. MCM Helper writes ids with a type prefix
@@ -139,7 +149,34 @@ void ERCPlugin::LoadSettings()
 	LoadIniFile(kPluginIni, _settings, false);
 	LoadIniFile(kMcmIni, _settings, true);
 
+	// Is TK Dodge RE installed? It owns the roll in JOJ (animation, stamina and
+	// i-frames), so ERC only runs its own roll when it is absent. Read-only:
+	// ERC never writes TK Dodge's ini.
+	_tkdodge.clear();
+	_tkdodgePresent = FileExists(kTKdodgeIni);
+	if (_tkdodgePresent)
+	{
+		LoadIniFile(kTKdodgeIni, _tkdodge, false);
+		std::ostringstream msg;
+		msg << "TK Dodge RE detected (hotkey " << static_cast<int>(TKdodgeFloat("DodgeHotkey"))
+			<< ", stamina " << TKdodgeFloat("DodgeStamina")
+			<< ", i-frames " << TKdodgeFloat("iFrameDuration")
+			<< "s) - ERC defers the roll to it";
+		ERC_Log(msg.str());
+	}
+	else
+	{
+		ERC_Log("TK Dodge RE not found - ERC runs its own roll; its animation "
+		        "events must exist in the behaviour graph or nothing will play");
+	}
+
 	ERC_Log("settings loaded");
+}
+
+float ERCPlugin::TKdodgeFloat(const std::string& key) const
+{
+	const auto it = _tkdodge.find(key);
+	return (it == _tkdodge.end()) ? 0.0f : static_cast<float>(std::atof(it->second.c_str()));
 }
 
 float ERCPlugin::GetFloat(const std::string& key) const

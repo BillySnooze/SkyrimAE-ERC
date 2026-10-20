@@ -41,7 +41,14 @@ registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, float, BSFixed
 ```
 
 Registered names: `ERC_GetFloat`, `ERC_GetInt`, `ERC_GetBool`, `ERC_GetString`,
-`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_RollStarted`, `ERC_TriggerHitStop`.
+`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_HasTKDodge`, `ERC_RollStarted`,
+`ERC_TriggerHitStop`.
+
+`ERC_HasTKDodge` is how the script decides whether to own the roll: the plugin
+checks for `Data\SKSE\Plugins\TK Dodge RE.ini` at load. Since TK Dodge RE's
+`DodgeHotkey` defaults to the same scan code ERC polled, and ERC's roll animation
+events exist in no behaviour graph, deferring is both the correct behaviour and
+the fix for the double stamina deduction.
 
 `NativeFunctionN<StaticFunctionTag, ...>` sets the native's isStatic flag from
 `IsStaticType<StaticFunctionTag>::value`, which is 1 (`skse-sdk/.../PapyrusArgs.h`).

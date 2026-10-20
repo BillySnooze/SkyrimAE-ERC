@@ -49,9 +49,9 @@ static void Defaults(std::map<std::string, std::string>& s)
 	// i-frames come from TK Dodge RE + I-Frame Generator in JOJ, because
 	// blocking damage needs a damage hook that this plugin does not install.
 	s["IframeFraction"]         = "0.55";
-	// Scan code 47 = V. Deliberately NOT 56 (Left Alt), which is TK Dodge RE's
+	// Scan code 45 = X. Deliberately not V (Timed Block-Dodge and Counter uses it)
 	// own DodgeHotkey: polling the same key made both mods roll at once.
-	s["DodgeKeyCode"]           = "47";
+	s["DodgeKeyCode"]           = "45";
 
 	s["StaggerFlinchThreshold"] = "8";
 	s["StaggerStaggerThreshold"] = "20";

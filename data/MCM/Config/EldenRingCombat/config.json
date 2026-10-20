@@ -27,8 +27,8 @@
           "id": "iDodgeKeyCode:Combat",
           "type": "slider",
           "text": "ERC Dodge Key Code",
-          "help": "Scan code ERC polls for its own roll (47 = V). Only used when Defer Dodge is OFF. Keep this different from TK Dodge RE's DodgeHotkey (56 = Left Alt) or you will roll twice.",
-          "valueOptions": { "min": 1, "max": 255, "step": 1, "formatString": "{0}", "sourceType": "ModSettingInt", "defaultValue": 47 }
+          "help": "Scan code ERC polls for its own roll (45 = X). Only used when Defer Dodge is OFF. Keep this clear of TK Dodge's key and of the V that JOJ's Timed Block-Dodge and Counter uses for its block key.",
+          "valueOptions": { "min": 1, "max": 255, "step": 1, "formatString": "{0}", "sourceType": "ModSettingInt", "defaultValue": 45 }
         },
         {
           "id": "fRollStaminaCost:Combat",

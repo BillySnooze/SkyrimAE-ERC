@@ -21,6 +21,12 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
   in your list. See `docs/JOJ-INTEGRATION.md` for why this is the right split:
   with TK Dodge RE installed the two would poll the same key and bill the same
   roll twice.
+- **The roll in JOJ was a *step dodge*, and that is now fixed.** The list ships
+  TK Dodge with `StepDodge = true`, which plays `TKDodge\StepDodge*.hkx` instead of
+  the roll clips. ERC ships a `TK Dodge RE.ini` override (ERC is top of MO2's
+  priority list) with `StepDodge = false`, `EnableDodgeInPlace = true` and
+  `defaultDodgeEvent = TKDodgeForward`, so dodging is a real roll, including from a
+  standstill. Delete that file from the ERC mod to restore the list's step dodge.
 - **ERC's own roll is the fallback.** On a list with no dodge framework, ERC polls
   the dodge key itself (tap = roll, hold = sprint) and fires the roll animation
   events through `Debug.SendAnimationEvent`. It deliberately drives the *TK Dodge*
@@ -31,9 +37,12 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
   *time* (the clock and AI scheduling), not animation playback, so dipping it never
   produced a visible freeze — earlier builds did exactly that and looked broken.
   Precision implements hit-stop by scaling each actor's animation speed, and JOJ
-  ships it enabled (0.07 s vs NPCs, 0.035 s otherwise, 0.1× slowdown, camera
-  shake). Tune it in **MCM → Precision → Hitstop**. A native hit-stop inside ERC
-  would need the same engine hook.
+  ships it enabled. Tune it in **MCM → Precision → Hitstop**. A native hit-stop
+  inside ERC would need the same engine hook.
+- **The freeze on a good dodge is a different mod.** JOJ's *Timed Block-Dodge and
+  Counter* fires ~0.3 s of 5%-speed bullet-time with radial blur when you dodge
+  into an attack (`TimedBlockDodgeCounter.ini` → `[TimedDodge] fSlomoDuration`).
+  That is not hit-stop; it only happens on a successful timed dodge.
 - **4-tier hit reactions (off by default).** Incoming hits map to flinch → stagger →
   large stagger → knockdown. Tiers come from what Skyrim's `OnHit` actually reports
   (bash, power attack, sneak attack, broken block) plus your health fraction, since

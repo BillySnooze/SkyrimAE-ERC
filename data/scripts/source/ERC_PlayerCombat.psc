@@ -97,12 +97,12 @@ float m_equipLoadMediumCut = 0.70
 ; so a full-health heavy hit staggers instead of flattening you.
 float m_knockdownHealthFraction = 0.35
 
-; Dodge input. Default is V (scan code 47), NOT Left Alt. TK Dodge RE already
-; polls Left Alt (its DodgeHotkey, scan code 56); if ERC polled the same key the
-; two would both fire and you would roll twice. Tap to roll, hold to sprint.
+; Dodge input. Default is X (scan code 45). Not Left Alt (TK Dodge's dodge key)
+; and not V: JOJ's Timed Block-Dodge and Counter is configured with sBlockKey = V,
+; so V would fire a timed block on every ERC dodge. Tap to roll, hold to sprint.
 ; Keyboard only (Papyrus Input has no gamepad query); controller users need the
 ; DLL input hook ([HOOK-1] in docs/BUILD.md).
-int   m_dodgeKeyCode      = 47
+int   m_dodgeKeyCode      = 45
 float m_sprintHoldSeconds = 0.25
 
 ; --- Internal state ---------------------------------------------------------

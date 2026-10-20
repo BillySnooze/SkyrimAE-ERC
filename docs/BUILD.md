@@ -9,20 +9,25 @@ EldenRingCombat/
 │  ├─ scripts/source/ERC_PlayerCombat.psc   ← Papyrus source (compiled by tools/build.ps1)
 │  ├─ scripts/ERC_PlayerCombat.pex          ← build output (runtime location)
 │  ├─ MCM/Config/EldenRingCombat/           ← MCM Helper menu (config.json + settings.ini)
-│  └─ SKSE/Plugins/ERC.dll                  ← build output (runtime location)
+│  ├─ SKSE/Plugins/ERC.dll                  ← build output (runtime location)
+│  ├─ EldenRingCombat.esp                   ← build output (authored by the houseCARL MCP)
+│  └─ SEQ/EldenRingCombat.seq               ← build output (starts the quest)
 ├─ plugin/
 │  ├─ include/  (ERCPlugin.h, erc_compat.h)
 │  ├─ src/      (ERCMain.cpp, ERCPlugin.cpp, ERCNatives.cpp)
 │  └─ validation/                           ← offline compile check (mock SDK)
 ├─ tools/
-│  ├─ build.ps1                             ← builds the .pex and ERC.dll
+│  ├─ build.ps1                             ← builds the .pex, ERC.dll and the .esp
+│  ├─ esp/                                  ← ESP authoring/verification (see Part A)
+│  ├─ housecarl/                            ← the quest record spec (JSON)
+│  ├─ mcp/                                  ← stdio MCP client used by the build
+│  ├─ xedit/                                ← headless xEdit verifier
 │  └─ validate-psc.ps1                      ← Papyrus structural check
 ├─ skse-sdk/                                ← cloned SDK (not committed)
 └─ docs/
 ```
 
-After one successful build, **`data/` is a complete installable mod tree** except
-for the `.esp` (Part A).
+After one successful build, **`data/` is a complete installable mod tree**.
 
 ---
 
@@ -40,11 +45,14 @@ Defaults used (override with the parameters shown):
 | `-SdkPath` | `.\skse-sdk` |
 | `-SkseScripts` | `.\skse64_2_02_06_gog\Data\Scripts\Source` |
 | `-VsDevCmd` | `...\Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat` |
+| `-Mo2Path` | `F:\Modlists\JOJ` (where the ESP is authored) |
 
 It compiles the Papyrus script, builds the SDK static libraries on first run,
-links `ERC.dll`, and copies both outputs into `data/`.
+links `ERC.dll`, authors `EldenRingCombat.esp` through the houseCARL MCP server,
+writes its `.seq`, and verifies the plugin with two independent parsers.
 
-Add `-SkipSdkBuild` once the SDK libraries exist.
+Add `-SkipSdkBuild` once the SDK libraries exist, `-SkipEsp` to leave the plugin
+alone.
 
 ### Verified build
 
@@ -53,39 +61,68 @@ Add `-SkipSdkBuild` once the SDK libraries exist.
 | `ERC_PlayerCombat.pex` | **0 errors, 0 warnings** — PapyrusCompiler from the CK install |
 | `ERC.dll` | **links clean**, exports `SKSEPlugin_Load` + `SKSEPlugin_Version` |
 | SDK | `skse64_0x01064920.lib` (runtime `0x01064920` = 1.6.1170) |
+| `EldenRingCombat.esp` | 351 bytes; parsed identically by this repo's byte reader, `esper` (skyrimck MCP) and xEdit |
 
 ---
 
-## Part A — the `.esp` (required)
+## Part A — the `.esp`
 
 Papyrus cannot run without a plugin record that carries the script. The SKSE
 plugin API has **no** `AttachScript`-style call (checked against the SDK: no such
-symbol exists), so this step is done in the Creation Kit.
+symbol exists), so the script hangs off a **quest ReferenceAlias** — Skyrim's only
+supported way to run a script on the player is a start-game-enabled quest whose
+alias is forced to the Player reference.
 
-The script is a **quest ReferenceAlias** script (`extends ReferenceAlias`).
-Skyrim's only supported way to run a script on the player is a start-game-enabled
-quest whose alias is forced to the Player reference.
+`tools\esp\build_esp.ps1` does this headlessly, so the Creation Kit is not
+required:
 
-### Steps
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\esp\build_esp.ps1             # author + verify
+powershell -ExecutionPolicy Bypass -File tools\esp\build_esp.ps1 -XEditVerify # + xEdit re-read
+```
 
-1. Make sure `data/scripts/ERC_PlayerCombat.pex` is in the game's
-   `Data\Scripts\` folder (the build script puts it in the repo's `data/`; copy
-   the whole `data/` tree into the game, or point CK at it).
-2. Open the Creation Kit. **File → Data**, tick `Skyrim.esm`, click OK.
-3. **File → New Plugin**, name it `EldenRingCombat`, OK.
-4. In the **Object Window → Quest**, right-click → **New**.
-   - Editor ID: `ERC_PlayerCombatQuest`
-   - **Quest Data** tab: tick **Start Game Enabled**, set Priority to `60`.
-   - Give it a name (e.g. "Elden Ring Combat").
-5. Open the **Quest Aliases** tab. Right-click the empty list → **New Alias**.
-   - Alias Name: `Player`
-   - Tick **Optional**? **No** — leave it unticked.
-   - **Force Reference To → Specific Reference**, then pick the **Player**
-     reference (`PlayerRef`, `00000014`).
-6. With the alias selected, open **Scripts → Add**, choose `ERC_PlayerCombat`,
-   OK.
-7. **File → Save.** CK writes `EldenRingCombat.esp`.
-8. Copy that `.esp` into `data/`.
+| Stage | Tool | What it guarantees |
+|---|---|---|
+| Author | `houseCARL` MCP (`housecarl_create`) | Every write is validated against the Skyrim record schema before any byte is written, and the file is re-read after writing. |
+| Data record | `tools\housecarl\params-create-quest.json` | The whole plugin is one declarative document: quest, alias, VMAD. |
+| `.seq` | `houseCARL` MCP (`housecarl_write_seq`) | A start-game-enabled quest in a non-master plugin only starts if `Data\SEQ\<plugin>.seq` exists. |
+| Verify | `skyrimck` MCP (`esp_verify`, esper) | Header, masters, record count. |
+| Verify | `tools\esp\verify_esp.py` | Byte-level: subrecord order, DNAM flags, ALFR link, VMAD layout. |
+| Verify | `tools\xedit\ERC_VerifyEsp.pas` (`-XEditVerify`) | xEdit's own parser, the closest thing to the game's loader. |
+
+Both MCP servers are declared in `.cursor\mcp.json`; the script reads their paths
+from there. `tools\mcp\mcp-client.ps1` is a small stdio JSON-RPC client, so the
+same tools work from a plain shell (and from `tools\build.ps1`).
+
+`-Offline` instead runs `tools\esp\build_esp.py`, a dependency-free Python writer
+that needs no MCP server (it does not write the `.seq`).
+
+### What the plugin contains
+
+| Part | Value |
+|---|---|
+| Quest | `ERC_PlayerCombatQuest` "Elden Ring Combat", Start Game Enabled, priority 60 |
+| Alias 0 | `Player`, forced reference `Skyrim.esm:00000014` (`PlayerRef`) |
+| VMAD | `ERC_PlayerCombat` attached to alias 0, no properties |
+
+Two byte-level details that look wrong but are not, and cost hours if assumed
+otherwise:
+
+- **The record's high byte is the master count**, not zero: with `Skyrim.esm` +
+  `Update.esm` as masters the record is `0x02000800` in the file. `Update.esm`
+  itself stores its own records as `01002ECE`. The loader swaps that byte for the
+  plugin's load-order index at runtime, which is why xEdit shows `05000800` here.
+- **The alias block in VMAD is `u16 zero, u16 alias id, u32 quest form id`** —
+  `u16 zero` first. Skyrim.esm `000B113D` (alias block naming alias 4) proves the
+  order; reading the FormID first makes every block parse one field early.
+
+### Installing the plugin
+
+The build leaves `data\EldenRingCombat.esp` and `data\SEQ\EldenRingCombat.seq` in
+the repo. `houseCARL` also leaves a copy in a `houseCARL - EldenRingCombat` MO2 mod
+folder; either install that folder or copy the two files into your own mod. The
+`.seq` must sit at `<mod>\SEQ\EldenRingCombat.seq` (or `Data\SEQ\`) or the quest —
+and so the script — silently never starts.
 
 > **Note on CK versions.** The CK here is 1.7.99 while the game runtime is
 > 1.6.1170. The SSE form version is unchanged between them, so the plugin loads —
@@ -200,7 +237,8 @@ extra Papyrus glue.
 |---|---|
 | `powershell -File tools\validate-psc.ps1 -Path data\scripts\source\ERC_PlayerCombat.psc` | Papyrus structure: no duplicate names, balanced blocks, no known non-Skyrim API or C-style syntax. |
 | `plugin\validation\build-check.bat` | The C++ compiles (`cl /c`) against mock SKSE headers. `.obj` only — no DLL, no link. |
-| `powershell -File tools\build.ps1` | The real thing: real Papyrus compiler + real SDK headers + full link. |
+| `powershell -File tools\build.ps1` | The real thing: real Papyrus compiler + real SDK headers + full link + a freshly authored, twice-verified `.esp`. |
+| `powershell -File tools\esp\build_esp.ps1 -XEditVerify` | The plugin alone, re-parsed by xEdit as well. |
 
 ---
 
@@ -209,7 +247,8 @@ extra Papyrus glue.
 1. Install SKSE 2.2.6 (matching 1.6.1170) and **MCM Helper**.
 2. Put the built `data/` contents into the game / your mod manager:
    `ERC.dll` in `Data/SKSE/Plugins/`, the `.pex` in `Data/Scripts/`,
-   the `MCM/` folder in `Data/`, and `EldenRingCombat.esp` in `Data/`.
+   the `MCM/` folder in `Data/`, `EldenRingCombat.esp` in `Data/`, and
+   `EldenRingCombat.seq` in `Data/SEQ/`.
 3. Enable `EldenRingCombat.esp`, launch via `skse64_loader.exe`.
 4. In the console: `sqv ERC_PlayerCombatQuest` — the quest should be running and
    the `Player` alias filled.
@@ -225,6 +264,7 @@ extra Papyrus glue.
 | Nothing happens, Papyrus log shows "cannot call native" | `ERC.dll` not in `Data/SKSE/Plugins/`, or SKSE not loading (wrong game version). |
 | MCM doesn't appear | MCM Helper not installed. |
 | Rolls never fire, no Papyrus errors | The quest alias is empty — check `sqv ERC_PlayerCombatQuest`, and that the alias is force-filled with the Player. |
+| Quest never runs, alias never fills, no log line | `Data\SEQ\EldenRingCombat.seq` is missing — a start-game-enabled quest in an `.esp` does not start without it. |
 | Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (56 = Left Alt). |
 | Rolls play but you still take damage | `[HOOK-2]` not installed — i-frames are inert without it. |
 | No hit-stop | Same: `[HOOK-2]` / `Update()` hook missing. |

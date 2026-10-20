@@ -1,0 +1,59 @@
+{
+  "patch": "EldenRingCombat",
+  "records": [
+    {
+      "record_type": "Quest",
+      "editorid": "ERC_PlayerCombatQuest",
+      "ops": [
+        { "field_path": "Name", "value": "Elden Ring Combat" },
+        { "field_path": "Flags", "op": "Add", "value": "StartGameEnabled" },
+        { "field_path": "Priority", "value": "60" },
+        {
+          "field_path": "Aliases",
+          "op": "InsertAtIndex",
+          "key": "0",
+          "compose": {
+            "type": "QuestAlias",
+            "fields": { "Name": "Player", "ID": "0" },
+            "sets": [
+              { "path": "ForcedReference", "value": "000014:Skyrim.esm" }
+            ]
+          }
+        },
+        {
+          "field_path": "VirtualMachineAdapter",
+          "compose": {
+            "type": "QuestAdapter",
+            "fields": { "Version": "5", "ObjectFormat": "2", "ExtraBindDataVersion": "2" },
+            "sets": [
+              {
+                "path": "Aliases",
+                "verb": "Add",
+                "compose": {
+                  "type": "QuestFragmentAlias",
+                  "fields": { "Version": "5", "ObjectFormat": "2" },
+                  "sets": [
+                    {
+                      "path": "Property",
+                      "compose": {
+                        "type": "ScriptObjectProperty",
+                        "fields": { "Alias": "0", "Object": "@ERC_PlayerCombatQuest" }
+                      }
+                    },
+                    {
+                      "path": "Scripts",
+                      "verb": "Add",
+                      "compose": { "type": "ScriptEntry", "fields": { "Name": "ERC_PlayerCombat" } }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "readback": true,
+  "max_chars": 20000
+}

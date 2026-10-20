@@ -4,6 +4,8 @@
 #  Produces:
 #    data/scripts/ERC_PlayerCombat.pex     (Papyrus, via the Creation Kit compiler)
 #    data/SKSE/Plugins/ERC.dll             (SKSE plugin, via MSVC + the SKSE SDK)
+#    data/EldenRingCombat.esp              (quest + player alias, via houseCARL MCP)
+#    data/SEQ/EldenRingCombat.seq          (so the start-game-enabled quest starts)
 #
 #  Prerequisites:
 #    * Skyrim SE/AE 1.6.1170 install (Papyrus compiler + source scripts)
@@ -23,7 +25,9 @@ param(
     [string]$SkseScripts = '',
     [string]$VsDevCmd    = 'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat',
     [string]$MsBuild     = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
-    [switch]$SkipSdkBuild
+    [string]$Mo2Path     = 'F:\Modlists\JOJ',
+    [switch]$SkipSdkBuild,
+    [switch]$SkipEsp
 )
 
 $ErrorActionPreference = 'Stop'
@@ -127,12 +131,32 @@ foreach ($junk in @('ERC.lib', 'ERC.exp')) {
 $dll = Join-Path $outDll 'ERC.dll'
 if (-not (Test-Path $dll)) { Fail 'ERC.dll was not produced' }
 
+# --- 4. EldenRingCombat.esp -------------------------------------------------
+# The quest record is what attaches ERC_PlayerCombat to the player alias; no
+# SKSE/Papyrus API can do that at runtime. Authoring goes through the houseCARL
+# MCP server and is verified by two independent parsers (see build_esp.ps1).
+$esp = Join-Path $root 'data\EldenRingCombat.esp'
+if (-not $SkipEsp) {
+    Step 'Authoring EldenRingCombat.esp (houseCARL MCP)...'
+    & powershell -NoProfile -ExecutionPolicy Bypass `
+        -File (Join-Path $PSScriptRoot 'esp\build_esp.ps1') -Mo2Path $Mo2Path
+    if ($LASTEXITCODE -ne 0) { Fail 'ESP build failed' }
+}
+elseif (-not (Test-Path $esp)) {
+    Fail 'data\EldenRingCombat.esp is missing (omit -SkipEsp to build it)'
+}
+
 # --- report -----------------------------------------------------------------
 $shippedPex = Join-Path $root 'data\scripts\ERC_PlayerCombat.pex'
 Step 'Done.'
 Write-Host ''
 Write-Host ('  data\scripts\ERC_PlayerCombat.pex   {0} bytes' -f (Get-Item $shippedPex).Length)
 Write-Host ('  data\SKSE\Plugins\ERC.dll           {0} bytes' -f (Get-Item $dll).Length)
+Write-Host ('  data\EldenRingCombat.esp            {0} bytes' -f (Get-Item $esp).Length)
+$seq = Join-Path $root 'data\SEQ\EldenRingCombat.seq'
+if (Test-Path $seq) {
+    Write-Host ('  data\SEQ\EldenRingCombat.seq        {0} bytes' -f (Get-Item $seq).Length)
+}
 Write-Host ''
-Write-Host '  Still required: the .esp (quest + player alias attaching the script).' -ForegroundColor Yellow
-Write-Host '  See docs\BUILD.md, Part A.' -ForegroundColor Yellow
+Write-Host '  Install: copy data\ into the game Data folder, or zip it as a mod'
+Write-Host '  folder. See docs\BUILD.md.'

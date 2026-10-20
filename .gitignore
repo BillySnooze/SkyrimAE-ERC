@@ -3,10 +3,12 @@ data/SKSE/Plugins/*.dll
 data/scripts/*.pex
 data/**/*.esp
 data/**/*.esm
+data/SEQ/*.seq
 *.obj
 *.lib
 *.exp
 *.pdb
+__pycache__/
 
 # Third-party SKSE runtime/SDK downloads (not part of this mod)
 skse64_*/

@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "skyrimck": {
+      "type": "stdio",
+      "command": "C:\\Users\\Billy\\SkyrimCK-MCP\\mcp\\publish\\SkyrimCkMcpServer.exe",
+      "args": []
+    },
+    "housecarl": {
+      "type": "stdio",
+      "command": "C:\\Users\\Billy\\AppData\\Local\\houseCARL\\server\\housecarl-mcp.exe",
+      "args": [],
+      "env": {
+        "HouseCarl__Mo2InstanceDir": "F:\\Modlists\\JOJ",
+        "HOUSECARL_DATA_DIR": "C:\\Users\\Billy\\AppData\\Local\\houseCARL\\data"
+      }
+    }
+  }
+}

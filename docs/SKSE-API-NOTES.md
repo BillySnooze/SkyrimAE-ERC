@@ -41,8 +41,28 @@ registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, float, BSFixed
 ```
 
 Registered names: `ERC_GetFloat`, `ERC_GetInt`, `ERC_GetBool`, `ERC_GetString`,
-`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_RollStarted`, `ERC_TriggerHitStop`,
-`ERC_GetTimeScale`, `ERC_SetTimeScale`.
+`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_RollStarted`, `ERC_TriggerHitStop`.
+
+`NativeFunctionN<StaticFunctionTag, ...>` sets the native's isStatic flag from
+`IsStaticType<StaticFunctionTag>::value`, which is 1 (`skse-sdk/.../PapyrusArgs.h`).
+A native registered that way only binds to a **`global`** Papyrus function; a
+plain `native` function is a *member* function and the VM refuses the pairing:
+
+```
+Native static function ERC_GetFloat could find no matching static function on
+linked type ERC_PlayerCombat. Function will not be bound.
+```
+
+That is not a warning — every call then throws `Unbound native function`, and
+because `OnInit()` calls `RefreshSettings()` first, the quest alias aborts before
+it ever reaches `RegisterForSingleUpdate()`, so the whole mod goes quiet. The
+declarations in `ERC_PlayerCombat.psc` are therefore `global native`, and calls
+are written `ERC_PlayerCombat.ERC_GetFloat("...")` (`tools/qualify-natives.py`
+enforces the qualification, and `build.ps1` runs it).
+
+The two `ERC_GetTimeScale` / `ERC_SetTimeScale` stubs were registered but never
+declared by any script, which produced the same error for them; they were
+removed rather than declared, since they only ever returned 1.0.
 
 ## Still version-specific
 

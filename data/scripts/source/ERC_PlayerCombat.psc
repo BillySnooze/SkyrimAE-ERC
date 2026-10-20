@@ -122,33 +122,33 @@ endEvent
 
 ; Read every tunable from the plugin (which merges its ini and MCM Helper's).
 function RefreshSettings()
-	m_rollStaminaCost   = ERC_GetFloat("RollStaminaCost")
-	m_hitStopSeconds    = ERC_GetFloat("HitStopSeconds")
+	m_rollStaminaCost   = ERC_PlayerCombat.ERC_GetFloat("RollStaminaCost")
+	m_hitStopSeconds    = ERC_PlayerCombat.ERC_GetFloat("HitStopSeconds")
 
-	m_enableRolls       = ERC_GetBool("EnableRolls")
-	m_enableHitStop     = ERC_GetBool("EnableHitStop")
-	m_enableGuardBreak  = ERC_GetBool("EnableGuardBreak")
-	m_enableLockOnRolls = ERC_GetBool("EnableLockOnRolls")
+	m_enableRolls       = ERC_PlayerCombat.ERC_GetBool("EnableRolls")
+	m_enableHitStop     = ERC_PlayerCombat.ERC_GetBool("EnableHitStop")
+	m_enableGuardBreak  = ERC_PlayerCombat.ERC_GetBool("EnableGuardBreak")
+	m_enableLockOnRolls = ERC_PlayerCombat.ERC_GetBool("EnableLockOnRolls")
 
-	m_animFlinch        = ERC_GetString("AnimFlinch")
-	m_animStagger       = ERC_GetString("AnimStagger")
-	m_animLargeStagger  = ERC_GetString("AnimLargeStagger")
-	m_animKnockdown     = ERC_GetString("AnimKnockdown")
+	m_animFlinch        = ERC_PlayerCombat.ERC_GetString("AnimFlinch")
+	m_animStagger       = ERC_PlayerCombat.ERC_GetString("AnimStagger")
+	m_animLargeStagger  = ERC_PlayerCombat.ERC_GetString("AnimLargeStagger")
+	m_animKnockdown     = ERC_PlayerCombat.ERC_GetString("AnimKnockdown")
 
-	m_rollLight         = ERC_GetString("RollLightFront")
-	m_rollMedium        = ERC_GetString("RollMediumFront")
-	m_rollHeavy         = ERC_GetString("RollHeavyFront")
+	m_rollLight         = ERC_PlayerCombat.ERC_GetString("RollLightFront")
+	m_rollMedium        = ERC_PlayerCombat.ERC_GetString("RollMediumFront")
+	m_rollHeavy         = ERC_PlayerCombat.ERC_GetString("RollHeavyFront")
 
-	m_rollDurationLight  = ERC_GetFloat("RollDurationLight")
-	m_rollDurationMedium = ERC_GetFloat("RollDurationMedium")
-	m_rollDurationHeavy  = ERC_GetFloat("RollDurationHeavy")
+	m_rollDurationLight  = ERC_PlayerCombat.ERC_GetFloat("RollDurationLight")
+	m_rollDurationMedium = ERC_PlayerCombat.ERC_GetFloat("RollDurationMedium")
+	m_rollDurationHeavy  = ERC_PlayerCombat.ERC_GetFloat("RollDurationHeavy")
 
-	m_equipLoadLightCut  = ERC_GetFloat("EquipLoadLightCut")
-	m_equipLoadMediumCut = ERC_GetFloat("EquipLoadMediumCut")
-	m_knockdownHealthFraction = ERC_GetFloat("KnockdownHealthFraction")
+	m_equipLoadLightCut  = ERC_PlayerCombat.ERC_GetFloat("EquipLoadLightCut")
+	m_equipLoadMediumCut = ERC_PlayerCombat.ERC_GetFloat("EquipLoadMediumCut")
+	m_knockdownHealthFraction = ERC_PlayerCombat.ERC_GetFloat("KnockdownHealthFraction")
 
-	m_dodgeKeyCode      = ERC_GetInt("DodgeKeyCode")
-	m_sprintHoldSeconds = ERC_GetFloat("SprintHoldSeconds")
+	m_dodgeKeyCode      = ERC_PlayerCombat.ERC_GetInt("DodgeKeyCode")
+	m_sprintHoldSeconds = ERC_PlayerCombat.ERC_GetFloat("SprintHoldSeconds")
 endFunction
 
 ; ============================================================================
@@ -200,7 +200,7 @@ function DoRoll(int aiDirection)
 	m_rollEndTime = Utility.GetCurrentRealTime() + duration
 
 	; Open the i-frame window in the plugin (fraction of `duration`).
-	ERC_RollStarted(duration)
+	ERC_PlayerCombat.ERC_RollStarted(duration)
 endFunction
 
 ; Map carried weight to an ER equip-load tier: 0 light, 1 medium, 2 heavy.
@@ -335,25 +335,34 @@ endFunction
 ; ============================================================================
 ;  NATIVE FUNCTIONS (implemented by ERC.dll — see plugin/src/ERCNatives.cpp)
 ; ============================================================================
-;  Native declarations use the form:  <type> function Name(params) native
-;  (return type first, `native` last; no return type = void).
+;  Native declarations use the form:  <type> function Name(params) global native
+;  (return type first, `global native` last; no return type = void).
+;
+;  `global` is not optional here. SKSE registers every function in ERCNatives.cpp
+;  through NativeFunctionN<StaticFunctionTag, ...>, and that template hands the
+;  VM an isStatic flag taken from StaticFunctionTag — so the DLL's functions are
+;  static, and a script function without `global` is a *member* function. The
+;  VM refuses to bind a static native to a member declaration and logs
+;  "Native static function ERC_X could find no matching static function"; every
+;  call then throws at runtime. Calls therefore also have to be qualified with
+;  the script name.
 ;
 ;  These are only ever called because ERC.dll is required — if the DLL is
 ;  missing, Papyrus throws on the first call, which is the intended hard failure.
 
-float  function ERC_GetFloat(string akKey) native
-int    function ERC_GetInt(string akKey) native
-bool   function ERC_GetBool(string akKey) native
-string function ERC_GetString(string akKey) native
-function ERC_SetFloat(string akKey, float afValue) native
+float  function ERC_GetFloat(string akKey) global native
+int    function ERC_GetInt(string akKey) global native
+bool   function ERC_GetBool(string akKey) global native
+string function ERC_GetString(string akKey) global native
+function ERC_SetFloat(string akKey, float afValue) global native
 
 ; Returns the next queued dodge-tap direction, or -1 if none. Reserved for a
 ; DLL input hook that can also supply a direction (lock-on aware).
 ; Currently unused by the script, which polls the key directly instead.
-int function ERC_ConsumeDodgeTap() native
+int function ERC_ConsumeDodgeTap() global native
 
 ; Open the i-frame window for the first IframeFraction of afDurationSeconds.
-function ERC_RollStarted(float afDurationSeconds) native
+function ERC_RollStarted(float afDurationSeconds) global native
 
 ; Dip timescale to HitStopScale for afSeconds, then restore.
-function ERC_TriggerHitStop(float afSeconds) native
+function ERC_TriggerHitStop(float afSeconds) global native

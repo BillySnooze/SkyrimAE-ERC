@@ -65,6 +65,13 @@ foreach ($d in @($outBuild, $outObj, $outPex, $outDll)) {
 # --- 1. Papyrus -------------------------------------------------------------
 Step 'Compiling Papyrus...'
 $src = Join-Path $root 'data\scripts\source'
+
+# Global natives must be called through their script (ERC_PlayerCombat.X); the
+# rewrite is idempotent and --check style, so a hand-written bare call fails
+# rather than compiling into a runtime "unbound native" error.
+& py (Join-Path $PSScriptRoot 'qualify-natives.py') 2>&1 | ForEach-Object { Write-Host "        $_" }
+if ($LASTEXITCODE -ne 0) { Fail 'native call qualification failed' }
+
 $pexArgs = @(
     'ERC_PlayerCombat.psc'
     "-f=$flags"
@@ -82,6 +89,13 @@ $builtPex = Join-Path $outPex 'ERC_PlayerCombat.pex'
 if (-not (Test-Path $builtPex)) { Fail 'ERC_PlayerCombat.pex was not produced' }
 Copy-Item $builtPex (Join-Path $root 'data\scripts\ERC_PlayerCombat.pex') -Force
 Step 'Papyrus OK -> data\scripts\ERC_PlayerCombat.pex'
+
+# --- 1b. MCM menu -----------------------------------------------------------
+# MCM Helper skips a config it cannot read without logging anything, which makes
+# a schema slip look exactly like "the mod does nothing". Catch it here.
+Step 'Validating the MCM menu...'
+& py (Join-Path $PSScriptRoot 'validate-mcm.py') 2>&1 | ForEach-Object { Write-Host "        $_" }
+if ($LASTEXITCODE -ne 0) { Fail 'MCM config validation failed' }
 
 # --- 2. SKSE SDK static libraries ------------------------------------------
 $libDir  = Join-Path $SdkPath 'skse64_plugins\ez_skse64ae_plugin_example\Builds\Release'

@@ -229,6 +229,28 @@ The menu is **MCM Helper** (SkyUI's MCM, driven by JSON) — no C++ menu code.
 `Data/SKSE/Plugins/EldenRingCombat.ini`. So MCM choices take effect without any
 extra Papyrus glue.
 
+The JSON shape is MCM Helper 1.5's, not the older SkyUI one:
+
+```json
+{
+  "modName": "EldenRingCombat",
+  "displayName": "Elden Ring Combat",
+  "minMcmVersion": 9,
+  "pages": [
+    { "pageDisplayName": "Combat", "content": [
+      { "id": "fRollStaminaCost:Combat", "type": "slider", "text": "...",
+        "valueOptions": { "min": 0, "max": 50, "step": 1,
+                          "sourceType": "ModSettingFloat", "defaultValue": 12 } }
+    ] }
+  ]
+}
+```
+
+The id splits into the settings key (`fRollStaminaCost`) and the `settings.ini`
+section (`Combat`); the `f` prefix is what makes MCM Helper store it as a float,
+and `ERC.dll` strips it again when reading. Get either half wrong and the menu
+either does not appear or appears with dead controls — hence `tools/validate-mcm.py`.
+
 ---
 
 ## Validation without the game
@@ -237,6 +259,8 @@ extra Papyrus glue.
 |---|---|
 | `powershell -File tools\validate-psc.ps1 -Path data\scripts\source\ERC_PlayerCombat.psc` | Papyrus structure: no duplicate names, balanced blocks, no known non-Skyrim API or C-style syntax. |
 | `plugin\validation\build-check.bat` | The C++ compiles (`cl /c`) against mock SKSE headers. `.obj` only — no DLL, no link. |
+| `py tools\validate-mcm.py` | The MCM document uses MCM Helper 1.5's schema: `pages`/`pageDisplayName`, `:Category` ids, `sourceType` on every `valueOptions`, and every id present in `settings.ini`. |
+| `py tools\qualify-natives.py --check` | Every native call is `ERC_PlayerCombat.ERC_X(...)`, matching the `global native` declarations. |
 | `powershell -File tools\build.ps1` | The real thing: real Papyrus compiler + real SDK headers + full link + a freshly authored, twice-verified `.esp`. |
 | `powershell -File tools\esp\build_esp.ps1 -XEditVerify` | The plugin alone, re-parsed by xEdit as well. |
 
@@ -262,9 +286,17 @@ extra Papyrus glue.
 | Symptom | Likely cause / fix |
 |---|---|
 | Nothing happens, Papyrus log shows "cannot call native" | `ERC.dll` not in `Data/SKSE/Plugins/`, or SKSE not loading (wrong game version). |
-| MCM doesn't appear | MCM Helper not installed. |
+| Papyrus logs `Native static function ERC_X could find no matching static function on linked type ERC_PlayerCombat`, then `Unbound native function "ERC_GetFloat" called` from `OnInit` | The script declared a native as a member function while `ERC.dll` registered it as static. Declarations must be `global native` and calls `ERC_PlayerCombat.ERC_GetFloat(...)`. `build.ps1` now enforces this via `tools/qualify-natives.py`. This failure stops `OnInit` before `RegisterForSingleUpdate`, so the mod is completely silent — no rolls, no hit-stop. |
+| MCM doesn't appear | Start with `Data/SKSE/Plugins/MCMHelper.log`: it logs every config it registers. If the mod is absent from that list the file was skipped, which MCM Helper does **without** logging an error. Check `Data/MCM/Config/EldenRingCombat/config.json` against `py tools/validate-mcm.py`: the document needs `pages` → `pageDisplayName` → `content`, ids of the form `fRollStaminaCost:Combat`, and a `sourceType` in every `valueOptions`. A root `content` array holding `{"type": "page"}` objects is silently ignored. |
+| MCM appears but sliders don't move settings | `settings.ini` section/key doesn't match the `:Category` in the id, or the id lacks its `f`/`i`/`b`/`s` prefix. |
 | Rolls never fire, no Papyrus errors | The quest alias is empty — check `sqv ERC_PlayerCombatQuest`, and that the alias is force-filled with the Player. |
 | Quest never runs, alias never fills, no log line | `Data\SEQ\EldenRingCombat.seq` is missing — a start-game-enabled quest in an `.esp` does not start without it. |
 | Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (56 = Left Alt). |
 | Rolls play but you still take damage | `[HOOK-2]` not installed — i-frames are inert without it. |
 | No hit-stop | Same: `[HOOK-2]` / `Update()` hook missing. |
+
+### Reading the first 20 lines of `Papyrus.0.log` is the fastest diagnosis
+
+Both silent-failure modes above are visible there within a second of loading a
+save: `Unbound native function` means the natives didn't bind, and an absent
+`ERC_PlayerCombat` line entirely means the alias script never ran.

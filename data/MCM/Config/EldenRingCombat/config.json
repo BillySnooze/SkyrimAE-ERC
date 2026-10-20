@@ -1,190 +1,193 @@
 {
   "modName": "EldenRingCombat",
   "displayName": "Elden Ring Combat",
-  "minMcmVersion": 3,
-  "content": [
+  "minMcmVersion": 9,
+  "cursorFillMode": "topToBottom",
+  "pages": [
     {
-      "type": "page",
-      "text": "Combat",
+      "pageDisplayName": "Combat",
+      "cursorFillMode": "topToBottom",
       "content": [
+        { "type": "header", "text": "Dodge" },
         {
+          "id": "fRollStaminaCost:Combat",
           "type": "slider",
           "text": "Roll Stamina Cost",
-          "id": "fRollStaminaCost",
           "help": "Stamina spent when a dodge roll starts. ELDEN RING default is 12.",
-          "valueOptions": { "min": 0, "max": 50, "step": 1, "defaultValue": 12 }
+          "valueOptions": { "min": 0, "max": 50, "step": 1, "sourceType": "ModSettingFloat", "defaultValue": 12 }
         },
         {
+          "id": "fIframeFraction:Combat",
           "type": "slider",
           "text": "I-Frame Fraction",
-          "id": "fIframeFraction",
           "help": "Fraction of the roll that is invincible. 0.55 = first 55% of the roll.",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "defaultValue": 0.55 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.55 }
         },
         {
-          "type": "slider",
-          "text": "Hit-Stop Duration",
-          "id": "fHitStopSeconds",
-          "help": "How long the world freezes on impact, in seconds.",
-          "valueOptions": { "min": 0, "max": 0.3, "step": 0.01, "defaultValue": 0.06 }
-        },
-        {
-          "type": "slider",
-          "text": "Hit-Stop Timescale",
-          "id": "fHitStopScale",
-          "help": "Timescale multiplier during hit-stop. Lower = harder freeze.",
-          "valueOptions": { "min": 0.05, "max": 1, "step": 0.05, "defaultValue": 0.15 }
-        },
-        {
+          "id": "iDodgeKeyCode:Combat",
           "type": "slider",
           "text": "Dodge Key Code",
-          "id": "iDodgeKeyCode",
           "help": "DirectInput scan code for dodge. 56 = Left Alt (tap to roll, hold to sprint), 57 = Space, 42 = Left Shift.",
-          "valueOptions": { "min": 1, "max": 255, "step": 1, "defaultValue": 56 }
+          "valueOptions": { "min": 1, "max": 255, "step": 1, "sourceType": "ModSettingInt", "defaultValue": 56 }
         },
         {
+          "id": "fSprintHoldSeconds:Combat",
           "type": "slider",
           "text": "Sprint Hold Time",
-          "id": "fSprintHoldSeconds",
           "help": "Holding dodge longer than this (seconds) is a sprint, not a roll.",
-          "valueOptions": { "min": 0.05, "max": 0.6, "step": 0.01, "defaultValue": 0.25 }
+          "valueOptions": { "min": 0.05, "max": 0.6, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.25 }
         },
         {
+          "id": "bEnableRolls:Combat",
           "type": "toggle",
           "text": "Enable Dodge Rolls",
-          "id": "bEnableRolls",
           "help": "Turn the tap-to-roll system on or off.",
-          "valueOptions": { "defaultValue": true }
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         },
         {
-          "type": "toggle",
-          "text": "Enable Hit-Stop",
-          "id": "bEnableHitStop",
-          "help": "Freeze on impact, like ELDEN RING.",
-          "valueOptions": { "defaultValue": true }
-        },
-        {
-          "type": "toggle",
-          "text": "Enable Guard Break",
-          "id": "bEnableGuardBreak",
-          "help": "Enable the four-tier hit reaction system.",
-          "valueOptions": { "defaultValue": true }
-        },
-        {
+          "id": "bEnableLockOnRolls:Combat",
           "type": "toggle",
           "text": "Enable Lock-On Rolls",
-          "id": "bEnableLockOnRolls",
           "help": "Use directional roll variants while locked on, preserving facing.",
-          "valueOptions": { "defaultValue": true }
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
+        },
+        { "type": "header", "text": "Impact" },
+        {
+          "id": "fHitStopSeconds:Combat",
+          "type": "slider",
+          "text": "Hit-Stop Duration",
+          "help": "How long the world freezes on impact, in seconds.",
+          "valueOptions": { "min": 0, "max": 0.3, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.06 }
+        },
+        {
+          "id": "fHitStopScale:Combat",
+          "type": "slider",
+          "text": "Hit-Stop Timescale",
+          "help": "Timescale multiplier during hit-stop. Lower = harder freeze.",
+          "valueOptions": { "min": 0.05, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.15 }
+        },
+        {
+          "id": "bEnableHitStop:Combat",
+          "type": "toggle",
+          "text": "Enable Hit-Stop",
+          "help": "Freeze on impact, like ELDEN RING.",
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
+        },
+        {
+          "id": "bEnableGuardBreak:Combat",
+          "type": "toggle",
+          "text": "Enable Guard Break",
+          "help": "Enable the four-tier hit reaction system.",
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         }
       ]
     },
     {
-      "type": "page",
-      "text": "Stagger",
+      "pageDisplayName": "Stagger",
+      "cursorFillMode": "topToBottom",
       "content": [
         {
+          "id": "fKnockdownHealthFraction:Stagger",
           "type": "slider",
           "text": "Knockdown Health Fraction",
-          "id": "fKnockdownHealthFraction",
           "help": "A power attack knocks you down only when health is below this fraction (0.35 = 35%).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "defaultValue": 0.35 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.35 }
         }
       ]
     },
     {
-      "type": "page",
-      "text": "Movement",
+      "pageDisplayName": "Movement",
+      "cursorFillMode": "topToBottom",
       "content": [
         {
+          "id": "fRollDurationLight:Movement",
           "type": "slider",
           "text": "Light Roll Duration",
-          "id": "fRollDurationLight",
           "help": "Seconds the light-load roll takes (also sizes its i-frames).",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 0.62 }
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.62 }
         },
         {
+          "id": "fRollDurationMedium:Movement",
           "type": "slider",
           "text": "Medium Roll Duration",
-          "id": "fRollDurationMedium",
           "help": "Seconds the medium-load roll takes.",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 0.78 }
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.78 }
         },
         {
+          "id": "fRollDurationHeavy:Movement",
           "type": "slider",
           "text": "Heavy Roll Duration",
-          "id": "fRollDurationHeavy",
           "help": "Seconds the heavy-load roll takes.",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "defaultValue": 1.05 }
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 1.05 }
         },
         {
+          "id": "fEquipLoadLightCut:Movement",
           "type": "slider",
           "text": "Light Load Cutoff",
-          "id": "fEquipLoadLightCut",
           "help": "Carried/max weight below this ratio counts as light load (ER: 0.30).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "defaultValue": 0.30 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.3 }
         },
         {
+          "id": "fEquipLoadMediumCut:Movement",
           "type": "slider",
           "text": "Medium Load Cutoff",
-          "id": "fEquipLoadMediumCut",
           "help": "Carried/max weight below this ratio counts as medium load (ER: 0.70).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "defaultValue": 0.70 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.7 }
         }
       ]
     },
     {
-      "type": "page",
-      "text": "Animations",
+      "pageDisplayName": "Animations",
+      "cursorFillMode": "topToBottom",
       "content": [
         {
-          "type": "textinput",
+          "id": "sAnimFlinch:Animations",
+          "type": "input",
           "text": "Flinch Animation",
-          "id": "sAnimFlinch",
           "help": "Animation event name for the flinch reaction.",
-          "valueOptions": { "defaultValue": "HitReaction_Flinch" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Flinch" }
         },
         {
-          "type": "textinput",
+          "id": "sAnimStagger:Animations",
+          "type": "input",
           "text": "Stagger Animation",
-          "id": "sAnimStagger",
           "help": "Animation event name for the stagger reaction.",
-          "valueOptions": { "defaultValue": "HitReaction_Stagger" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Stagger" }
         },
         {
-          "type": "textinput",
+          "id": "sAnimLargeStagger:Animations",
+          "type": "input",
           "text": "Large Stagger Animation",
-          "id": "sAnimLargeStagger",
           "help": "Animation event name for the large stagger.",
-          "valueOptions": { "defaultValue": "HitReaction_LargeStagger" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_LargeStagger" }
         },
         {
-          "type": "textinput",
+          "id": "sAnimKnockdown:Animations",
+          "type": "input",
           "text": "Knockdown Animation",
-          "id": "sAnimKnockdown",
           "help": "Animation event name for the knockdown.",
-          "valueOptions": { "defaultValue": "HitReaction_Knockdown" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Knockdown" }
         },
         {
-          "type": "textinput",
+          "id": "sRollLightFront:Animations",
+          "type": "input",
           "text": "Light Roll Animation",
-          "id": "sRollLightFront",
           "help": "Base animation event for the light roll (direction suffixes are appended).",
-          "valueOptions": { "defaultValue": "ERC_Roll_Light_Front" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Light_Front" }
         },
         {
-          "type": "textinput",
+          "id": "sRollMediumFront:Animations",
+          "type": "input",
           "text": "Medium Roll Animation",
-          "id": "sRollMediumFront",
           "help": "Base animation event for the medium roll.",
-          "valueOptions": { "defaultValue": "ERC_Roll_Medium_Front" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Medium_Front" }
         },
         {
-          "type": "textinput",
+          "id": "sRollHeavyFront:Animations",
+          "type": "input",
           "text": "Heavy Roll Animation",
-          "id": "sRollHeavyFront",
           "help": "Base animation event for the heavy roll.",
-          "valueOptions": { "defaultValue": "ERC_Roll_Heavy_Front" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Heavy_Front" }
         }
       ]
     }

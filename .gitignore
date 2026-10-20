@@ -14,6 +14,13 @@ __pycache__/
 skse64_*/
 skse-sdk/
 
+# Upstream reference repo, cloned for comparison only
+ELDEN-RING-Combat-Rewrite/
+
+# A loose copy of data/ that someone renamed to ERC/ — the real install target is
+# the mod manager's folder, not the repo root.
+ERC/
+
 # Scratch dir for genuine-header checks
 validation-tmp/
 

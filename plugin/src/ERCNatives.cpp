@@ -57,18 +57,6 @@ namespace
 	{
 		ERCPlugin::Get().TriggerHitStop(afSeconds);
 	}
-
-	float GetTimeScaleNative(StaticFunctionTag*)
-	{
-		// [HOOK-2] read the game's live timescale where available.
-		return 1.0f;
-	}
-
-	void SetTimeScaleNative(StaticFunctionTag*, float afValue)
-	{
-		// [HOOK-2] write the game's timescale where available.
-		(void)afValue;
-	}
 }
 
 bool ERCRegisterNatives(VMClassRegistry* registry)
@@ -97,10 +85,6 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 		"ERC_RollStarted", cls, RollStartedNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
 		"ERC_TriggerHitStop", cls, TriggerHitStopNative, registry));
-	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, float>(
-		"ERC_GetTimeScale", cls, GetTimeScaleNative, registry));
-	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
-		"ERC_SetTimeScale", cls, SetTimeScaleNative, registry));
 
 	return true;
 }

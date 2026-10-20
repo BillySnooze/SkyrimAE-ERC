@@ -19,27 +19,35 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
   and OAR animation packs. ERC detects TK Dodge RE and hands the roll over, so you
   get the real animations and a real 0.3 s invincibility window that are already
   in your list. See `docs/JOJ-INTEGRATION.md` for why this is the right split:
-  ERC's own animation events exist in no behaviour graph, and running both would
-  bill the same roll twice.
+  with TK Dodge RE installed the two would poll the same key and bill the same
+  roll twice.
 - **ERC's own roll is the fallback.** On a list with no dodge framework, ERC polls
-  the dodge key itself (tap = roll, hold = sprint) and drives its own clip names.
-  Those names must exist in a behaviour graph — see Step 3 of the integration doc.
-- **Hit-stop on impact.** When a blow lands on you, the world freezes for a few
-  frames via a dip of Skyrim's `TimeScale` global — the "impact crunch" that makes
-  ER hits feel weighty. No address hook: Skyrim's timescale is a writable global,
-  so this is pure Papyrus with a real-time (not game-time) deadline.
-- **4-tier hit reactions.** Incoming hits map to flinch → stagger → large stagger →
-  knockdown. Tiers come from what Skyrim's `OnHit` actually reports (bash, power
-  attack, sneak attack, broken block) plus your health fraction, since Papyrus
-  exposes no weapon damage.
+  the dodge key itself (tap = roll, hold = sprint) and fires the roll animation
+  events through `Debug.SendAnimationEvent`. It deliberately drives the *TK Dodge*
+  clips (`TKDodgeForward/Back/Left/Right`), because those are the roll events that
+  exist in practice; the invented `ERC_Roll_*` names of earlier builds matched no
+  behaviour graph and so rolled nothing.
+- **Hit-stop is delegated to Precision.** Skyrim's `TimeScale` global scales game
+  *time* (the clock and AI scheduling), not animation playback, so dipping it never
+  produced a visible freeze — earlier builds did exactly that and looked broken.
+  Precision implements hit-stop by scaling each actor's animation speed, and JOJ
+  ships it enabled (0.07 s vs NPCs, 0.035 s otherwise, 0.1× slowdown, camera
+  shake). Tune it in **MCM → Precision → Hitstop**. A native hit-stop inside ERC
+  would need the same engine hook.
+- **4-tier hit reactions (off by default).** Incoming hits map to flinch → stagger →
+  large stagger → knockdown. Tiers come from what Skyrim's `OnHit` actually reports
+  (bash, power attack, sneak attack, broken block) plus your health fraction, since
+  Papyrus exposes no weapon damage. Disabled by default because Skyrim and BFCO
+  already apply their own reactions, and a second one on the same hit stacks.
 - **Equip-load-scaled rolls.** Light / medium / heavy load — the ratio of carried
   weight (`InventoryWeight`) to max carry weight (`CarryWeight`), the same measure
-  ELDEN RING uses — selects a roll variant; heavier loads roll longer and slower.
+  ELDEN RING uses — selects how long ERC waits before the next roll.
   (With TK Dodge RE installed, JOJ's Heavy Armor Dodge / Low Level dodge packs
   already provide the variants; ERC's version applies on the fallback path.)
-- **Full MCM tuning.** Dodge deferral, dodge key, sprint-hold time, stamina costs, i-frame
-  fraction, hit-stop duration/strength, knockdown health fraction, equip-load cuts, roll durations, animation
-  names, and feature toggles.
+- **Full MCM tuning.** Dodge deferral, dodge key, sprint-hold time, stamina cost,
+  roll durations, equip-load cuts, knockdown health fraction, every roll and hit
+  reaction animation event, and feature toggles. Sliders carry MCM Helper
+  `formatString` values, so fractional settings display as `0.15` rather than `0`.
 
 ## What it is NOT
 
@@ -132,18 +140,15 @@ This repository contains **source code and documentation**, not prebuilt binarie
   verifies it with three independent parsers (own byte reader, esper, xEdit).
   `docs\BUILD.md` Part A documents the record and the two byte-level details that
   are easy to get wrong.
-- ✅ **Hit-stop works without a hook.** Skyrim's timescale is the global
-  `TimeScale` (`Skyrim.esm` `0x0000003A`, default 20.0) — not an INI setting, so
-  `Utility.SetINIFloat` cannot touch it, but `GlobalVariable.SetValue` can. The
-  dip's expiry is tracked in **real** time because game-time timers are stretched
-  by the dip itself. Verified against `Skyrim.esm` by parsing the record, not by
-  assumption. Triggers when you are struck; outgoing-hit hit-stop still needs a
-  combat-hit hook.
-- ⚠️ **Two version-specific hooks remain** (`[HOOK-1]` per-frame tick/gamepad,
-  `[HOOK-2]` i-frame damage nullification), because they need your
-  exact runtime's addresses. See `docs/SKSE-API-NOTES.md`. Note that i-frames in
-  JOJ come from **IFrame Generator**, not from ERC's `[HOOK-2]`, so playable
-  invincibility is already there.
+- ❌ **Not a hit-stop implementation.** An earlier build dipped the `TimeScale`
+  global and looked broken, because that global scales game time rather than
+  animation playback. JOJ's Precision already does hit-stop properly; ERC points at
+  it instead of competing with it.
+- ⚠️ **One version-specific hook remains** (`[HOOK-1]` per-frame tick/gamepad),
+  because it needs your exact runtime's addresses. See `docs/SKSE-API-NOTES.md`.
+  Note that i-frames in JOJ come from **TK Dodge RE / IFrame Generator**, not from
+  ERC — ERC's plugin tracks a window but installs no damage hook, so it cannot
+  block a hit. Use the defer path for real invincibility.
 - ⚠️ **No ELDEN RING animation data ships here, by design.** ER animations are
   Havok 2016/2018 `.hkx` inside `.anibnd.dcx` on FromSoft's skeleton; Skyrim SE
   needs Havok 2010 `.hkx` on the `NPC …` rig plus a behaviour-graph entry, and

@@ -13,36 +13,8 @@
           "id": "bDeferDodgeToTKDodge:Combat",
           "type": "toggle",
           "text": "Defer Dodge to TK Dodge RE",
-          "help": "Recommended ON. TK Dodge RE performs the roll with its own animation, stamina cost and i-frames (via I-Frame Generator). ERC then adds only hit-stop and stagger. Leave ON whenever TK Dodge RE is installed: both mods poll the same key, so turning this OFF as well makes you roll twice and pay stamina twice.",
+          "help": "Recommended ON. TK Dodge RE performs the roll with its own animation, stamina cost and i-frames (via I-Frame Generator). Turning this OFF makes ERC roll instead, using the TK Dodge animation events listed on the Animations page, on ERC's own key. TK Dodge RE still answers to its own hotkey either way, so the two keys must differ (they do by default: ERC = V, TK Dodge = Left Alt).",
           "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
-        },
-        {
-          "id": "fRollStaminaCost:Combat",
-          "type": "slider",
-          "text": "Roll Stamina Cost (ERC roll only)",
-          "help": "Only used when ERC runs its own roll, i.e. Defer Dodge is OFF. With TK Dodge RE the cost is DodgeStamina in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
-          "valueOptions": { "min": 0, "max": 50, "step": 1, "sourceType": "ModSettingFloat", "defaultValue": 12 }
-        },
-        {
-          "id": "fIframeFraction:Combat",
-          "type": "slider",
-          "text": "I-Frame Fraction (ERC roll only)",
-          "help": "Only used when ERC runs its own roll. With TK Dodge RE the window is iFrameDuration in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.55 }
-        },
-        {
-          "id": "iDodgeKeyCode:Combat",
-          "type": "slider",
-          "text": "Dodge Key Code (ERC roll only)",
-          "help": "Only polled when Defer Dodge is OFF. TK Dodge RE uses its own DodgeHotkey (56 = Left Alt) in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
-          "valueOptions": { "min": 1, "max": 255, "step": 1, "sourceType": "ModSettingInt", "defaultValue": 56 }
-        },
-        {
-          "id": "fSprintHoldSeconds:Combat",
-          "type": "slider",
-          "text": "Sprint Hold Time",
-          "help": "Holding dodge longer than this (seconds) is a sprint, not a roll.",
-          "valueOptions": { "min": 0.05, "max": 0.6, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.25 }
         },
         {
           "id": "bEnableRolls:Combat",
@@ -52,40 +24,43 @@
           "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         },
         {
+          "id": "iDodgeKeyCode:Combat",
+          "type": "slider",
+          "text": "ERC Dodge Key Code",
+          "help": "Scan code ERC polls for its own roll (47 = V). Only used when Defer Dodge is OFF. Keep this different from TK Dodge RE's DodgeHotkey (56 = Left Alt) or you will roll twice.",
+          "valueOptions": { "min": 1, "max": 255, "step": 1, "formatString": "{0}", "sourceType": "ModSettingInt", "defaultValue": 47 }
+        },
+        {
+          "id": "fRollStaminaCost:Combat",
+          "type": "slider",
+          "text": "Roll Stamina Cost (ERC roll only)",
+          "help": "Only used when ERC runs its own roll, i.e. Defer Dodge is OFF. With TK Dodge RE the cost is DodgeStamina in Data\\SKSE\\Plugins\\TK Dodge RE.ini.",
+          "valueOptions": { "min": 0, "max": 50, "step": 1, "formatString": "{0}", "sourceType": "ModSettingFloat", "defaultValue": 12 }
+        },
+        {
+          "id": "fSprintHoldSeconds:Combat",
+          "type": "slider",
+          "text": "Sprint Hold Time",
+          "help": "Holding the dodge key longer than this many seconds counts as a sprint, not a roll.",
+          "valueOptions": { "min": 0.05, "max": 0.6, "step": 0.01, "formatString": "{2} s", "sourceType": "ModSettingFloat", "defaultValue": 0.25 }
+        },
+        {
           "id": "bEnableLockOnRolls:Combat",
           "type": "toggle",
-          "text": "Enable Lock-On Rolls",
-          "help": "Use directional roll variants while locked on, preserving facing.",
+          "text": "Directional Rolls",
+          "help": "Pick the roll clip from WASD (forward / back / left / right) instead of always rolling forward.",
           "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         },
-        { "type": "header", "text": "Impact" },
-        {
-          "id": "fHitStopSeconds:Combat",
-          "type": "slider",
-          "text": "Hit-Stop Duration",
-          "help": "Real seconds the world freezes when an impact lands. ELDEN RING uses roughly 0.04-0.08.",
-          "valueOptions": { "min": 0, "max": 0.3, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.06 }
-        },
-        {
-          "id": "fHitStopScale:Combat",
-          "type": "slider",
-          "text": "Hit-Stop Timescale",
-          "help": "Timescale multiplier during the freeze, relative to Skyrim's TimeScale global (20.0). 0.15 makes the world run at 15% speed; lower = harder freeze. Reaches 1.0 for no slowdown.",
-          "valueOptions": { "min": 0.05, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.15 }
-        },
-        {
-          "id": "bEnableHitStop:Combat",
-          "type": "toggle",
-          "text": "Enable Hit-Stop",
-          "help": "Freeze on impact, like ELDEN RING. Fires when you are struck (including blocked hits); freezing on your own outgoing hits needs the native combat-hit hook, which is not implemented yet.",
-          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
-        },
+        { "type": "header", "text": "Impact — hit-stop is provided by Precision" },
+        { "type": "header", "text": "Tune it in MCM → Precision → Hitstop (0.07s, 0.1x, shake)" },
+        { "type": "header", "text": "ERC no longer dips TimeScale: it slows the clock, not animations" },
+        { "type": "header", "text": "Hit Reactions" },
         {
           "id": "bEnableGuardBreak:Combat",
           "type": "toggle",
-          "text": "Enable Guard Break",
-          "help": "Enable the four-tier hit reaction system.",
-          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
+          "text": "Enable ERC Hit Reactions",
+          "help": "ERC's own four-tier flinch/stagger/knockdown. OFF by default: Skyrim and BFCO already apply their own hit reactions, and firing a second one on the same hit stacks them into a stun-lock. The animation names on the Animations page must exist in your behaviour graph; the defaults are the vanilla events.",
+          "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": false }
         }
       ]
     },
@@ -98,7 +73,7 @@
           "type": "slider",
           "text": "Knockdown Health Fraction",
           "help": "A power attack knocks you down only when health is below this fraction (0.35 = 35%).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.35 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "formatString": "{2}", "sourceType": "ModSettingFloat", "defaultValue": 0.35 }
         }
       ]
     },
@@ -110,36 +85,36 @@
           "id": "fRollDurationLight:Movement",
           "type": "slider",
           "text": "Light Roll Duration",
-          "help": "Seconds the light-load roll takes (also sizes its i-frames).",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.62 }
+          "help": "Seconds the light-load roll takes before ERC allows another one.",
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "formatString": "{2} s", "sourceType": "ModSettingFloat", "defaultValue": 0.62 }
         },
         {
           "id": "fRollDurationMedium:Movement",
           "type": "slider",
           "text": "Medium Roll Duration",
           "help": "Seconds the medium-load roll takes.",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.78 }
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "formatString": "{2} s", "sourceType": "ModSettingFloat", "defaultValue": 0.78 }
         },
         {
           "id": "fRollDurationHeavy:Movement",
           "type": "slider",
           "text": "Heavy Roll Duration",
           "help": "Seconds the heavy-load roll takes.",
-          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 1.05 }
+          "valueOptions": { "min": 0.2, "max": 2, "step": 0.01, "formatString": "{2} s", "sourceType": "ModSettingFloat", "defaultValue": 1.05 }
         },
         {
           "id": "fEquipLoadLightCut:Movement",
           "type": "slider",
           "text": "Light Load Cutoff",
           "help": "Carried/max weight below this ratio counts as light load (ER: 0.30).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.3 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "formatString": "{2}", "sourceType": "ModSettingFloat", "defaultValue": 0.3 }
         },
         {
           "id": "fEquipLoadMediumCut:Movement",
           "type": "slider",
           "text": "Medium Load Cutoff",
           "help": "Carried/max weight below this ratio counts as medium load (ER: 0.70).",
-          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.7 }
+          "valueOptions": { "min": 0, "max": 1, "step": 0.05, "formatString": "{2}", "sourceType": "ModSettingFloat", "defaultValue": 0.7 }
         }
       ]
     },
@@ -148,53 +123,72 @@
       "cursorFillMode": "topToBottom",
       "content": [
         {
+          "type": "text",
+          "text": "Roll Events",
+          "help": "These must be events your behaviour graph defines. The defaults are TK Dodge's own, which ship with TK Dodge SE / the OAR dodge packs in this list.",
+          "valueOptions": { "value": "TK Dodge clips" }
+        },
+        {
+          "id": "sRollEventForward:Animations",
+          "type": "input",
+          "text": "Roll Forward Event",
+          "help": "Animation event sent for a forward roll (no movement key held).",
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "TKDodgeForward" }
+        },
+        {
+          "id": "sRollEventBack:Animations",
+          "type": "input",
+          "text": "Roll Back Event",
+          "help": "Animation event sent when S is held.",
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "TKDodgeBack" }
+        },
+        {
+          "id": "sRollEventLeft:Animations",
+          "type": "input",
+          "text": "Roll Left Event",
+          "help": "Animation event sent when A is held.",
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "TKDodgeLeft" }
+        },
+        {
+          "id": "sRollEventRight:Animations",
+          "type": "input",
+          "text": "Roll Right Event",
+          "help": "Animation event sent when D is held.",
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "TKDodgeRight" }
+        },
+        {
+          "type": "text",
+          "text": "Hit Reaction Events",
+          "help": "Only used when Enable ERC Hit Reactions is ON. Defaults are the vanilla stagger events.",
+          "valueOptions": { "value": "vanilla stagger" }
+        },
+        {
           "id": "sAnimFlinch:Animations",
           "type": "input",
           "text": "Flinch Animation",
           "help": "Animation event name for the flinch reaction.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Flinch" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "Stagger_Small" }
         },
         {
           "id": "sAnimStagger:Animations",
           "type": "input",
           "text": "Stagger Animation",
           "help": "Animation event name for the stagger reaction.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Stagger" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "StaggerForward" }
         },
         {
           "id": "sAnimLargeStagger:Animations",
           "type": "input",
           "text": "Large Stagger Animation",
           "help": "Animation event name for the large stagger.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_LargeStagger" }
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "Stagger_Large" }
         },
         {
           "id": "sAnimKnockdown:Animations",
           "type": "input",
           "text": "Knockdown Animation",
-          "help": "Animation event name for the knockdown.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "HitReaction_Knockdown" }
-        },
-        {
-          "id": "sRollLightFront:Animations",
-          "type": "input",
-          "text": "Light Roll Animation",
-          "help": "Base animation event for the light roll (direction suffixes are appended).",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Light_Front" }
-        },
-        {
-          "id": "sRollMediumFront:Animations",
-          "type": "input",
-          "text": "Medium Roll Animation",
-          "help": "Base animation event for the medium roll.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Medium_Front" }
-        },
-        {
-          "id": "sRollHeavyFront:Animations",
-          "type": "input",
-          "text": "Heavy Roll Animation",
-          "help": "Base animation event for the heavy roll.",
-          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "ERC_Roll_Heavy_Front" }
+          "help": "Animation event name for the knockdown. Vanilla has no knockdown event, so this reuses the large stagger by default.",
+          "valueOptions": { "sourceType": "ModSettingString", "defaultValue": "Stagger_Large" }
         }
       ]
     }

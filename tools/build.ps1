@@ -109,13 +109,6 @@ Step 'Validating the MCM menu...'
 & py (Join-Path $PSScriptRoot 'validate-mcm.py') 2>&1 | ForEach-Object { Write-Host "        $_" }
 if ($LASTEXITCODE -ne 0) { Fail 'MCM config validation failed' }
 
-# Hit-stop depends on a specific record in Skyrim.esm (the TimeScale global) and
-# on real-time rather than game-time scheduling. Check the record against the
-# actual ESM so a wrong FormID or value cannot ship silently.
-Step 'Verifying the hit-stop mechanism...'
-& py (Join-Path $PSScriptRoot 'verify-hitstop.py') -game $GamePath 2>&1 | ForEach-Object { Write-Host "        $_" }
-if ($LASTEXITCODE -ne 0) { Fail 'hit-stop verification failed' }
-
 # --- 2. SKSE SDK static libraries ------------------------------------------
 $libDir  = Join-Path $SdkPath 'skse64_plugins\ez_skse64ae_plugin_example\Builds\Release'
 $mainLib = Join-Path $libDir 'skse64_0x01064920.lib'

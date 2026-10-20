@@ -39,8 +39,8 @@ real i-frames.** ERC's job is the layer TK Dodge does not cover.
 | Weapon damage / scaling | **BFCO** (unchanged) | ERC never touches damage numbers. |
 | Enemy AI attacks & reactions | **BFCO** (unchanged) | Leave all records as-is. |
 | Player dodge roll, stamina, i-frames | **TK Dodge RE + IFrame Generator** | ERC detects TK Dodge RE and stands down. |
-| Player hit-stop on impact | **ERC** | Global timescale dip when a blow lands. |
-| Player stagger / guard-break tiers | **ERC** | 4-tier flinch→knockdown from `OnHit`. |
+| Player hit-stop on impact | **Precision** | Scales each actor's animation speed. ERC no longer dips the timescale. |
+| Player stagger / guard-break tiers | **ERC** (off by default) | 4-tier flinch→knockdown from `OnHit`. |
 | Lock-on | **TDM** (unchanged) | Rolling direction is TK Dodge's. |
 
 ### Why ERC defers instead of competing
@@ -48,12 +48,14 @@ real i-frames.** ERC's job is the layer TK Dodge does not cover.
 Three things went wrong when ERC rolled on its own in JOJ:
 
 1. **The animation event didn't exist.** ERC called
-   `PlayAnimation("ERC_Roll_Light_Front")`. Grepping every config in the install
-   finds that string only in ERC's own `config.json` — no behaviour graph defines
-   it, so the event plays nothing. This is why the mod appeared to "do nothing"
-   even with the DLL loaded and the quest running.
+   `PlayAnimation("ERC_Roll_Light_Front")`, which is both a Papyrus error on actors
+   ("is an Actor, and PlayAnimation should not be used") and a name no behaviour
+   graph defines. Grepping every config in the install found that string only in
+   ERC's own `config.json`, so nothing played. This is why the mod appeared to "do
+   nothing" even with the DLL loaded and the quest running. ERC now sends the
+   `TKDodge*` events with `Debug.SendAnimationEvent` instead.
 2. **Both mods polled Left Alt.** TK Dodge RE's `DodgeHotkey` is 56; ERC's
-   `DodgeKeyCode` defaulted to 56.
+   `DodgeKeyCode` defaulted to 56. ERC's default is now 47 (V).
 3. **Both billed stamina** — 10 from TK Dodge plus 12 from ERC on a single press.
 
 ERC now asks `ERC_HasTKDodge()` (the DLL checks for
@@ -134,12 +136,16 @@ SKSE plugin log capture, not in `Papyrus.0.log`.
 
 Open **Elden Ring Combat** in the MCM:
 
-- **Combat page:** Defer Dodge to TK Dodge RE, sprint-hold time, hit-stop duration
-  and timescale, and the feature toggles. (Roll stamina / i-frame / key are
-  fallback-only.)
+- **Combat page:** Defer Dodge to TK Dodge RE, ERC's dodge key, sprint-hold time,
+  roll stamina cost, directional rolls, and the hit-reaction toggle. (The key,
+  stamina and sprint controls are fallback-only.)
 - **Stagger page:** the knockdown health fraction.
-- **Movement page:** equip-load cuts and per-tier roll durations (fallback only).
-- **Animations page:** stagger and roll animation event names.
+- **Movement page:** equip-load cuts and per-tier roll lockout durations (fallback only).
+- **Animations page:** the roll animation events (`TKDodge*` by default) and the
+  hit reaction events (vanilla `Stagger_*` by default).
+
+Hit-stop is **not** on this menu: it belongs to Precision, under **MCM → Precision
+→ Hitstop**.
 
 MCM Helper persists choices to `Data/MCM/Settings/EldenRingCombat.ini`, which
 `ERC.dll` merges over `Data/SKSE/Plugins/EldenRingCombat.ini` on load and on game
@@ -147,12 +153,14 @@ load.
 
 ## Step 6 — Animation names for the stagger tiers
 
-`OnHit`-driven reactions call `PlayAnimation` with
-`AnimFlinch` / `AnimStagger` / `AnimLargeStagger` / `AnimKnockdown`. The defaults
-(`HitReaction_Flinch` etc.) are **unverified placeholders** — the same class of
-mistake as `ERC_Roll_*`. If stagger reactions don't visibly play, set these to
-events your install actually defines (check the moveset/OAR mods' behaviour
-configs), or turn off **Enable Guard Break** until you have names that exist.
+`OnHit`-driven reactions send `AnimFlinch` / `AnimStagger` / `AnimLargeStagger` /
+`AnimKnockdown` via `Debug.SendAnimationEvent`. The old defaults
+(`HitReaction_Flinch` etc.) were **unverified placeholders** — the same class of
+mistake as `ERC_Roll_*`, and they existed in no behaviour graph. The defaults are
+now the vanilla events (`Stagger_Small`, `StaggerForward`, `Stagger_Large`,
+`Stagger_Large`), checked against the shipped animation data. Enable
+**Enable ERC Hit Reactions** only if you want a second reaction on top of BFCO's;
+it ships OFF.
 
 ---
 
@@ -160,9 +168,9 @@ configs), or turn off **Enable Guard Break** until you have names that exist.
 
 | Potential conflict | Resolution |
 |---|---|
-| TK Dodge RE vs ERC both rolling on Left Alt | Handled: ERC defers by default. If you turn deferral off while TK Dodge RE is installed, you will roll twice and pay both stamina costs. |
-| Two hit-stop mods | JOJ has none that dip the global timescale — `Timed Block-Dodge and Counter` freezes only the attacker's animation, and Valhalla's slow-time is scoped to timed blocks, so ordinary hits do not overlap. If you add a global-timescale hit-stop mod, disable one of them: ERC restores its own saved value, which would clobber the other's dip. |
-| Stagger double-playing (BFCO hit-reactions + ERC) | If both fire, unset ERC's stagger names or disable **Enable Guard Break**; BFCO's moveset reactions are animation-authored and usually look better. |
+| TK Dodge RE vs ERC both rolling on Left Alt | Handled: ERC defers by default, and ERC's own dodge key is **V (47)**, not Left Alt. If you turn deferral off, ERC fires the `TKDodge*` event itself, so both keys work and neither rolls twice. |
+| Two hit-stop mods | ERC no longer implements hit-stop, so there is nothing to conflict with. JOJ's Precision owns it (MCM → Precision → Hitstop). |
+| Stagger double-playing (BFCO hit-reactions + ERC) | ERC's reactions are OFF by default. If you enable them and it stacks, set the event names to `""` or turn **Enable ERC Hit Reactions** back off; BFCO's moveset reactions are animation-authored and usually look better. |
 | `iFrameDuration` ignored | I-Frame Generator RE must be installed (it is, in JOJ) — TK Dodge RE does not provide i-frames itself. |
 
 ## Testing in JOJ
@@ -170,9 +178,12 @@ configs), or turn off **Enable Guard Break** until you have names that exist.
 1. `skse64.log` (or DebugView) shows the `[ERC] TK Dodge RE detected …` line.
 2. Papyrus log shows no `Unbound native function` from `ERC_PlayerCombat`.
 3. MCM shows **Elden Ring Combat** with Combat / Stagger / Movement / Animations.
-4. Tap Left Alt → one roll, one stamina cost (10, not 22), with i-frames.
-5. Take a hit → a brief world freeze (hit-stop), then flinch/stagger per your
-   configured names. Hit-stop is ERC's, so turning off **Enable Hit-Stop** should
-   remove the freeze without affecting the roll or stagger.
+4. Tap Left Alt → one TK Dodge roll with i-frames. (With deferral OFF instead, tap
+   **V** → ERC sends `TKDodgeBack`-style events itself.)
+5. Take a hit → Precision's hit-stop freeze (MCM → Precision → Hitstop), then
+   flinch/stagger only if **Enable ERC Hit Reactions** is ON.
 6. I-frame *damage* nullification still needs `[HOOK-2]`; in JOJ the roll's
    invincibility comes from I-Frame Generator, so it works regardless.
+7. Papyrus log must show **no** `is an Actor, and PlayAnimation should not be used`
+   from `ERC_PlayerCombat` — that error meant the roll and stagger clips were
+   silently doing nothing.

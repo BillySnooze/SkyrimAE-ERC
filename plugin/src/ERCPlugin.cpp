@@ -44,11 +44,14 @@ double ERCPlugin::Now()
 static void Defaults(std::map<std::string, std::string>& s)
 {
 	s["RollStaminaCost"]        = "12";
-	s["IframeFraction"]         = "0.55";
-	s["HitStopSeconds"]         = "0.06";
-	s["HitStopScale"]           = "0.15";
 	s["SprintHoldSeconds"]      = "0.25";
-	s["DodgeKeyCode"]           = "56";   // DirectInput scan code: 56 = Left Alt
+	// No MCM control: the tracked i-frame window is diagnostic only. Real
+	// i-frames come from TK Dodge RE + I-Frame Generator in JOJ, because
+	// blocking damage needs a damage hook that this plugin does not install.
+	s["IframeFraction"]         = "0.55";
+	// Scan code 47 = V. Deliberately NOT 56 (Left Alt), which is TK Dodge RE's
+	// own DodgeHotkey: polling the same key made both mods roll at once.
+	s["DodgeKeyCode"]           = "47";
 
 	s["StaggerFlinchThreshold"] = "8";
 	s["StaggerStaggerThreshold"] = "20";
@@ -56,19 +59,24 @@ static void Defaults(std::map<std::string, std::string>& s)
 	s["KnockdownHealthFraction"] = "0.35";
 
 	s["EnableRolls"]            = "true";
-	s["EnableHitStop"]          = "true";
-	s["EnableGuardBreak"]       = "true";
+	// Off by default: the engine and BFCO already apply hit reactions, and a
+	// second stagger on the same hit stacks into a stun-lock.
+	s["EnableGuardBreak"]       = "false";
 	s["EnableLockOnRolls"]      = "true";
 	s["DeferDodgeToTKDodge"]    = "true";
 
-	s["AnimFlinch"]             = "HitReaction_Flinch";
-	s["AnimStagger"]            = "HitReaction_Stagger";
-	s["AnimLargeStagger"]       = "HitReaction_LargeStagger";
-	s["AnimKnockdown"]          = "HitReaction_Knockdown";
+	// Real events from this install's behaviour graph (vanilla stagger events).
+	s["AnimFlinch"]             = "Stagger_Small";
+	s["AnimStagger"]            = "StaggerForward";
+	s["AnimLargeStagger"]       = "Stagger_Large";
+	s["AnimKnockdown"]          = "Stagger_Large";
 
-	s["RollLightFront"]         = "ERC_Roll_Light_Front";
-	s["RollMediumFront"]        = "ERC_Roll_Medium_Front";
-	s["RollHeavyFront"]         = "ERC_Roll_Heavy_Front";
+	// TK Dodge's animation events. ERC's own roll sends these instead of the
+	// invented ERC_Roll_* names, which no behaviour graph defined.
+	s["RollEventForward"]       = "TKDodgeForward";
+	s["RollEventBack"]          = "TKDodgeBack";
+	s["RollEventLeft"]          = "TKDodgeLeft";
+	s["RollEventRight"]         = "TKDodgeRight";
 
 	s["RollDurationLight"]      = "0.62";
 	s["RollDurationMedium"]     = "0.78";

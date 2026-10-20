@@ -216,8 +216,8 @@ The `.lib`/`.exp` the linker drops next to the DLL are intermediates; delete the
 | `SKSEPlugin_Version` / `SKSEPlugin_Load` entry points | ✅ built against the genuine headers |
 | Papyrus native registration (`ERC_*`, class `ERC_PlayerCombat`) | ✅ built + exported |
 | Settings store + ini merge (plugin ini + MCM Helper ini) | ✅ implemented |
-| I-frame window maths (`OnRollStarted`, `InIframeWindow`) | ✅ implemented (fallback roll only) |
-| Hit-stop | ✅ implemented in Papyrus against the `TimeScale` global — no hook needed |
+| I-frame window maths (`OnRollStarted`, `InIframeWindow`) | ✅ implemented (fallback roll only), diagnostic — nothing consumes it |
+| Hit-stop | ❌ removed: dipping `TimeScale` scales game time, not animation playback. Use Precision (JOJ ships it enabled) |
 | Per-frame `Update()` | ⚠️ needs a hook to be called (see below) |
 | Input hook / i-frame damage nullification | ⚠️ `[HOOK-1]` / `[HOOK-2]` — version-specific |
 
@@ -226,8 +226,16 @@ The `.lib`/`.exp` the linker drops next to the DLL are intermediates; delete the
 **`[HOOK-2]` — i-frame damage nullification.** Install a hook on the player
 damage path and zero physical damage while `InIframeWindow()` is true. With
 CommonLibSSE-NG this is a few lines; without it you need signature scans for your
-exact runtime. *(Hit-stop used to be in this bucket; it turned out not to need a
-hook at all — see `docs/SKSE-API-NOTES.md`, "Hit-stop — why it is Papyrus".)*
+exact runtime.
+
+**Hit-stop, if you ever want it inside ERC.** It cannot be done from Papyrus:
+`TimeScale` (the global the console's `set timescale` writes) scales game *time* —
+the clock and AI scheduling — not animation playback, so a dip is applied and
+restored correctly yet never freezes the screen. Precision's approach is the
+correct one: scale each actor's animation `deltaTime` in a hook (see
+`GetHitstopMultiplier` in Precision's `Hooks.cpp`). Until ERC grows that hook, the
+MCM points at **Precision → Hitstop**, which JOJ ships at 0.07 s / 0.1× with
+camera shake.
 
 **`[HOOK-1]` — per-frame tick + optional gamepad input.**
 `ERCPlugin::Update()` is not called by SKSE automatically. Call it from a hook
@@ -306,17 +314,18 @@ either does not appear or appears with dead controls — hence `tools/validate-m
 | Symptom | Likely cause / fix |
 |---|---|
 | Nothing happens, Papyrus log shows "cannot call native" | `ERC.dll` not in `Data/SKSE/Plugins/`, or SKSE not loading (wrong game version). |
-| The mod appears in MO2, `ERC.dll` logs "loaded correctly", but nothing happens in game **and** there is no MCM entry | The quest never started. `EldenRingCombat.esp` had Start Game Enabled as `0x0001` instead of `0x0100`. Start Game Enabled is DNAM bit `0x0100` — checked against `Skyrim.esm`, where `MQ101`/`MQ102` (which must run from game start) carry `0x0100` with a clean record header while `DA10` has `0x0000`. With the wrong bit the alias script never attaches to the player, so `OnInit`/`OnUpdate`/`OnHit` never fire: no rolls, no hit-stop, and no MCM. `tools/esp/patch-quest-flags.py` repairs it and `build.ps1` runs it every build. |
+| The mod appears in MO2, `ERC.dll` logs "loaded correctly", but nothing happens in game **and** there is no MCM entry | The quest never started. `EldenRingCombat.esp` had Start Game Enabled as `0x0001` instead of `0x0100`. Start Game Enabled is DNAM bit `0x0100` — checked against `Skyrim.esm`, where `MQ101`/`MQ102` (which must run from game start) carry `0x0100` with a clean record header while `DA10` has `0x0000`. With the wrong bit the alias script never attaches to the player, so `OnInit`/`OnUpdate`/`OnHit` never fire: no rolls, no hit reactions, and no MCM. `tools/esp/patch-quest-flags.py` repairs it and `build.ps1` runs it every build. |
 | Plugin suspiciously small / a group runs past the end of the file | A `GRUP` size field counts **only** its content, not the 24-byte header. Writing header+content overruns EOF by exactly one record header (a 351-byte file claiming a 247-byte group with 223 bytes present). Check with `py tools/inspect-plugin.py data\EldenRingCombat.esp`. |
 | No Papyrus log at all | Papyrus logging is off by default. With MO2's profile-local INIs the live file is `profiles\<profile>\skyrim.ini`, not `Documents\My Games\...`. Set `bEnableLogging=1` and `bLoadDebugInformation=1` in `[Papyrus]`. |
-| Papyrus logs `Native static function ERC_X could find no matching static function on linked type ERC_PlayerCombat`, then `Unbound native function "ERC_GetFloat" called` from `OnInit` | The script declared a native as a member function while `ERC.dll` registered it as static. Declarations must be `global native` and calls `ERC_PlayerCombat.ERC_GetFloat(...)`. `build.ps1` enforces this via `tools/qualify-natives.py`. This failure stops `OnInit` before `RegisterForSingleUpdate`, so the mod is completely silent — no rolls, no hit-stop. |
+| Papyrus logs `Native static function ERC_X could find no matching static function on linked type ERC_PlayerCombat`, then `Unbound native function "ERC_GetFloat" called` from `OnInit` | The script declared a native as a member function while `ERC.dll` registered it as static. Declarations must be `global native` and calls `ERC_PlayerCombat.ERC_GetFloat(...)`. `build.ps1` enforces this via `tools/qualify-natives.py`. This failure stops `OnInit` before `RegisterForSingleUpdate`, so the mod is completely silent — no rolls, no hit reactions. |
 | MCM appears but sliders don't move settings | `settings.ini` section/key doesn't match the `:Category` in the id, or the id lacks its `f`/`i`/`b`/`s` prefix. Check with `py tools/validate-mcm.py`: the document needs `pages` → `pageDisplayName` → `content`, ids of the form `fRollStaminaCost:Combat`, and a `sourceType` in every `valueOptions`. A root `content` array holding `{"type": "page"}` objects is silently ignored. |
 | Quest never runs, alias never fills, no log line | `Data\SEQ\EldenRingCombat.seq` is missing — a start-game-enabled quest in an `.esp` does not start on an existing save without it. |
-| Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (56 = Left Alt). |
+| Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (47 = V by default). Recall Left Alt belongs to TK Dodge RE — ERC moved off it so the two cannot roll at once. |
 | Rolls play but you still take damage | I-frame damage nullification is `[HOOK-2]` — not implemented. In JOJ the roll's i-frames come from I-Frame Generator, not ERC. |
-| No hit-stop | Read the `ERC:` lines in `Papyrus.0.log`. `could not resolve Skyrim.esm TimeScale (0x3A)` means the global lookup failed; `TimeScale is <n> - skipping hit-stop` means something else had already zeroed it. To recover by hand, `set timescale to 20` in the console. |
-| Hit-stop freezes but the world stays slow afterwards | A dip outlived its deadline. `EndHitStop()` runs on load and on closing the MCM as watchdogs; if it recurs, report it — the restore value is script state saved in the save file. |
-| Hit-stop feels too strong / too weak | `Hit-Stop Timescale` is relative to the global's 20.0: 0.15 = 15% speed. Raise towards 1.0 for a softer freeze. |
+| ERC's own roll does nothing | Check `Papyrus.0.log` for `is an Actor, and PlayAnimation should not be used` — if present you are running an old `.pex`. Also confirm the roll event names on the Animations page exist in your behaviour graph (`TKDodge*` ship with TK Dodge in JOJ). |
+| No hit-stop | ERC does not implement hit-stop. Use MCM → Precision → Hitstop (JOJ enables it: 0.07 s vs NPCs, 0.035 s otherwise, 0.1× slowdown). If Precision's freeze is invisible, raise the durations or lower `fHitstopSlowdownTimeMultiplier`. |
+| Hit-stop feels too strong / too weak | `fHitstopDurationNPC` / `fHitstopDurationOther` in Precision's MCM set the freeze length; `fHitstopSlowdownTimeMultiplier` sets how slow it gets (0.1 = 10% speed). |
+| Sliders show whole numbers instead of decimals | Every float slider needs a `formatString` in `valueOptions` (e.g. `"{2}"` for two decimals, `"{2} s"` for seconds). Without it MCM Helper renders `0.15` as `0`. |
 
 ### Reading the first 20 lines of `Papyrus.0.log` is the fastest diagnosis
 

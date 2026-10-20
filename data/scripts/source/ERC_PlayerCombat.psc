@@ -50,8 +50,10 @@ float m_rollDurationHeavy  = 1.05
 
 ; Equip-load thresholds are a RATIO of carried weight to max carry weight
 ; (ELDEN RING: <=0.30 light, <=0.70 medium, above that heavy). Read from the
-; actor values InventoryWeight / CarryWeight — Skyrim's Papyrus has no
-; Form.GetWeight(), so this is both the correct API and a truer ER analogue.
+; actor values InventoryWeight / CarryWeight rather than summing per-item
+; GetWeight() calls: SKSE does add Form.GetWeight(), but the ratio is what ER
+; actually tiers, and the actor values never drift from the game's own
+; accounting.
 float m_equipLoadLightCut  = 0.30
 float m_equipLoadMediumCut = 0.70
 
@@ -202,8 +204,8 @@ function DoRoll(int aiDirection)
 endFunction
 
 ; Map carried weight to an ER equip-load tier: 0 light, 1 medium, 2 heavy.
-; Skyrim exposes no Form.GetWeight(), but the actor values InventoryWeight and
-; CarryWeight give exactly the load ratio ELDEN RING uses for roll speed.
+; Not a per-item GetWeight() sum: ER tiers the ratio, and InventoryWeight /
+; CarryWeight is the same quantity the game itself maintains.
 int function GetEquipLoadTier(Actor akActor)
 	float maxCarry = akActor.GetActorValue("CarryWeight")
 	if (maxCarry <= 0.0)

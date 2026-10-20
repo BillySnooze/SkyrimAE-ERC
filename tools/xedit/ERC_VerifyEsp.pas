@@ -2,8 +2,23 @@
 //  ERC_VerifyEsp.pas
 //  Independent check of data/EldenRingCombat.esp: xEdit parses the plugin from
 //  disk and reports what the game would see. Read-only.
+//
+//  Two pitfalls this script guards against, both of which hang xEdit behind a
+//  dialog instead of failing usefully:
+//    * ElementCount(nil) raises. A quest with no aliases (the MCM quest) has no
+//      Aliases element at all, so every count goes through Count().
+//    * Nothing is written until the end, so a hang leaves no evidence. The log
+//      is flushed after each record.
 // ============================================================================
 unit UserScript;
+
+const
+  // Full paths, not a directory + separator: a literal ending in a backslash
+  // ("...\build\") is parsed as an escaped quote by xEdit's JvInterpreter and
+  // the script then fails to compile -- which xEdit reports as a modal dialog,
+  // so the harness just times out with no output at all.
+  LOG_PATH  = 'C:\Users\Billy\EldenRingCombat\build\esp-verify.txt';
+  DONE_PATH = 'C:\Users\Billy\EldenRingCombat\build\esp-verify.done';
 
 var
   sl: TStringList;
@@ -12,6 +27,15 @@ procedure Log(s: string);
 begin
   sl.Add(s);
   AddMessage(s);
+  sl.SaveToFile(LOG_PATH);
+end;
+
+function Count(e: IInterface): integer;
+begin
+  if Assigned(e) then
+    Result := ElementCount(e)
+  else
+    Result := 0;
 end;
 
 function B(b: boolean): string;
@@ -22,10 +46,12 @@ end;
 function Initialize: integer;
 var
   i, j, k: integer;
-  f, grp, rec, aliases, alias, alfr, vmad, vmadAliases, entry, scripts,
-  script: IInterface;
+  f, grp, rec, aliases, alias, alfr, vmad, vmadAliases, scripts,
+  script, entry: IInterface;
 begin
   sl := TStringList.Create;
+  sl.Add('ERC_VerifyEsp starting');
+  sl.SaveToFile(LOG_PATH);
 
   f := nil;
   for i := 0 to FileCount - 1 do
@@ -33,67 +59,84 @@ begin
       f := FileByIndex(i);
       Break;
     end;
+
   if not Assigned(f) then begin
     Log('FAIL: EldenRingCombat.esp was not loaded');
-    sl.SaveToFile('C:\Users\Billy\EldenRingCombat\build\esp-verify.txt');
     Result := 1;
     Exit;
   end;
+
   Log('file loaded: ' + GetFileName(f) + '  masters=' + IntToStr(MasterCount(f)));
 
   grp := GroupBySignature(f, 'QUST');
-  Log('QUST records: ' + IntToStr(ElementCount(grp)));
+  Log('QUST records: ' + IntToStr(Count(grp)));
 
-  rec := ElementByIndex(grp, 0);
-  Log('record: ' + Name(rec));
-  Log('  EDID: ' + GetEditValue(ElementBySignature(rec, 'EDID')));
-  Log('  FULL: ' + GetEditValue(ElementBySignature(rec, 'FULL')));
-  Log('  DNAM flags: ' + GetEditValue(ElementByPath(rec, 'DNAM\Flags')));
-  Log('  DNAM priority: ' + GetEditValue(ElementByPath(rec, 'DNAM\Priority')));
-  Log('  ANAM: ' + GetEditValue(ElementBySignature(rec, 'ANAM')));
+  for i := 0 to Count(grp) - 1 do begin
+    rec := ElementByIndex(grp, i);
+    Log('');
+    Log('record: ' + Name(rec));
+    Log('  EDID: ' + GetEditValue(ElementBySignature(rec, 'EDID')));
+    Log('  FULL: ' + GetEditValue(ElementBySignature(rec, 'FULL')));
+    Log('  DNAM flags: ' + GetEditValue(ElementByPath(rec, 'DNAM\Flags')));
+    Log('  DNAM priority: ' + GetEditValue(ElementByPath(rec, 'DNAM\Priority')));
+    Log('  ANAM: ' + GetEditValue(ElementBySignature(rec, 'ANAM')));
 
-  aliases := ElementByName(rec, 'Aliases');
-  Log('  aliases: ' + IntToStr(ElementCount(aliases)));
-  for j := 0 to ElementCount(aliases) - 1 do begin
-    alias := ElementByIndex(aliases, j);
-    Log('   alias ' + IntToStr(j) + ' id=' +
-        GetEditValue(ElementBySignature(alias, 'ALST')) +
-        ' name=' + GetEditValue(ElementBySignature(alias, 'ALID')));
-    alfr := ElementBySignature(alias, 'ALFR');
-    if Assigned(alfr) then
-      Log('     ALFR = ' + GetEditValue(alfr) +
-          ' -> ' + GetEditValue(LinksTo(alfr)))
-    else
-      Log('     ALFR missing');
-  end;
+    aliases := ElementByName(rec, 'Aliases');
+    Log('  aliases: ' + IntToStr(Count(aliases)));
+    for j := 0 to Count(aliases) - 1 do begin
+      alias := ElementByIndex(aliases, j);
+      Log('   alias ' + IntToStr(j) + ' id=' +
+          GetEditValue(ElementBySignature(alias, 'ALST')) +
+          ' name=' + GetEditValue(ElementBySignature(alias, 'ALID')));
+      alfr := ElementBySignature(alias, 'ALFR');
+      if Assigned(alfr) then
+        Log('     ALFR = ' + GetEditValue(alfr) +
+            ' -> ' + GetEditValue(LinksTo(alfr)))
+      else
+        Log('     ALFR missing');
+    end;
 
-  vmad := ElementBySignature(rec, 'VMAD');
-  Log('  VMAD: ' + B(Assigned(vmad)));
-  if Assigned(vmad) then begin
-    Log('   version=' + GetEditValue(ElementByName(vmad, 'Version')));
-    vmadAliases := ElementByName(vmad, 'Aliases');
-    Log('   alias blocks: ' + IntToStr(ElementCount(vmadAliases)));
-    for j := 0 to ElementCount(vmadAliases) - 1 do begin
-      entry := ElementByIndex(vmadAliases, j);
-      Log('    block ' + IntToStr(j) + ' quest=' +
-          GetEditValue(ElementByPath(entry, 'Object Union\Object v2\FormID')) +
-          ' alias=' +
-          GetEditValue(ElementByPath(entry, 'Object Union\Object v2\Alias')));
-      scripts := ElementByName(entry, 'Alias Scripts');
-      for k := 0 to ElementCount(scripts) - 1 do begin
+    vmad := ElementBySignature(rec, 'VMAD');
+    Log('  VMAD: ' + B(Assigned(vmad)));
+    if Assigned(vmad) then begin
+      Log('   version=' + GetEditValue(ElementByName(vmad, 'Version')));
+
+      // Quest-level scripts. This is what MCM Helper needs: the quest must own a
+      // script derived from MCM_ConfigBase, or the JSON config is never read.
+      scripts := ElementByName(vmad, 'Scripts');
+      Log('   quest scripts: ' + IntToStr(Count(scripts)));
+      for k := 0 to Count(scripts) - 1 do begin
         script := ElementByIndex(scripts, k);
-        Log('      script: ' +
+        Log('     quest script: ' +
             GetEditValue(ElementByName(script, 'ScriptName')));
+      end;
+
+      vmadAliases := ElementByName(vmad, 'Aliases');
+      Log('   alias blocks: ' + IntToStr(Count(vmadAliases)));
+      for j := 0 to Count(vmadAliases) - 1 do begin
+        entry := ElementByIndex(vmadAliases, j);
+        Log('    block ' + IntToStr(j) + ' quest=' +
+            GetEditValue(ElementByPath(entry, 'Object Union\Object v2\FormID')) +
+            ' alias=' +
+            GetEditValue(ElementByPath(entry, 'Object Union\Object v2\Alias')));
+        scripts := ElementByName(entry, 'Alias Scripts');
+        for k := 0 to Count(scripts) - 1 do begin
+          script := ElementByIndex(scripts, k);
+          Log('      alias script: ' +
+              GetEditValue(ElementByName(script, 'ScriptName')));
+        end;
       end;
     end;
   end;
 
-  sl.SaveToFile('C:\Users\Billy\EldenRingCombat\build\esp-verify.txt');
+  Log('');
+  Log('done');
+  sl.SaveToFile(LOG_PATH);
   sl.Free;
 
   sl := TStringList.Create;
   sl.Add('done');
-  sl.SaveToFile('C:\Users\Billy\EldenRingCombat\build\esp-verify.done');
+  sl.SaveToFile(DONE_PATH);
   sl.Free;
 
   Result := 1;

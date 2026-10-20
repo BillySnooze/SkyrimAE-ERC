@@ -58,6 +58,13 @@ $outBuild = Join-Path $root 'build'
 $outObj   = Join-Path $outBuild 'obj'
 $outPex   = Join-Path $outBuild 'Scripts'
 $outDll   = Join-Path $root 'data\SKSE\Plugins'
+
+# MCM Helper's public base scripts, needed only to compile ERC_MCM.psc (which
+# extends MCM_ConfigBase). The running copies come from MCMHelper.bsa.
+$mcmVendor = Join-Path $PSScriptRoot 'vendor\mcm-helper'
+if (-not (Test-Path (Join-Path $mcmVendor 'MCM_ConfigBase.psc'))) {
+    Fail "MCM Helper public scripts missing from $mcmVendor (see its README)"
+}
 foreach ($d in @($outBuild, $outObj, $outPex, $outDll)) {
     if (-not (Test-Path $d)) { New-Item -ItemType Directory -Force $d | Out-Null }
 }
@@ -73,22 +80,27 @@ $src = Join-Path $root 'data\scripts\source'
 if ($LASTEXITCODE -ne 0) { Fail 'native call qualification failed' }
 
 $pexArgs = @(
-    'ERC_PlayerCombat.psc'
     "-f=$flags"
-    "-i=$src;$SkseScripts;$gameScripts"
+    "-i=$src;$mcmVendor;$SkseScripts;$gameScripts"
     "-o=$outPex"
 )
 Push-Location $src
 try {
-    & $papyrus @pexArgs 2>&1 | ForEach-Object { Write-Host "        $_" }
-    if ($LASTEXITCODE -ne 0) { Fail 'Papyrus compilation failed' }
+    # The compiler takes exactly one file per invocation.
+    foreach ($script in @('ERC_PlayerCombat.psc', 'ERC_MCM.psc')) {
+        Write-Host "        $script"
+        & $papyrus $script @pexArgs 2>&1 | ForEach-Object { Write-Host "        $_" }
+        if ($LASTEXITCODE -ne 0) { Fail "Papyrus compilation failed: $script" }
+    }
 }
 finally { Pop-Location }
 
-$builtPex = Join-Path $outPex 'ERC_PlayerCombat.pex'
-if (-not (Test-Path $builtPex)) { Fail 'ERC_PlayerCombat.pex was not produced' }
-Copy-Item $builtPex (Join-Path $root 'data\scripts\ERC_PlayerCombat.pex') -Force
-Step 'Papyrus OK -> data\scripts\ERC_PlayerCombat.pex'
+foreach ($name in @('ERC_PlayerCombat', 'ERC_MCM')) {
+    $builtPex = Join-Path $outPex "$name.pex"
+    if (-not (Test-Path $builtPex)) { Fail "$name.pex was not produced" }
+    Copy-Item $builtPex (Join-Path $root "data\scripts\$name.pex") -Force
+}
+Step 'Papyrus OK -> data\scripts\ERC_PlayerCombat.pex, ERC_MCM.pex'
 
 # --- 1b. MCM menu -----------------------------------------------------------
 # MCM Helper skips a config it cannot read without logging anything, which makes
@@ -139,18 +151,26 @@ $lines = @(
     ('call "{0}" -arch=x64 -no_logo >nul 2>&1' -f $VsDevCmd)
     $clLine
 )
-Set-Content -Path $bat -Value $lines -Encoding ASCII
+   Set-Content -Path $bat -Value $lines -Encoding ASCII
 
-cmd /c "`"$bat`"" 2>&1 |
-    Where-Object { $_ -notmatch '^\s*$' } | ForEach-Object { Write-Host "        $_" }
+   # Delete the previous DLL first: cl does not remove its output on failure, so
+   # a stale binary would otherwise survive a failed compile and get shipped as
+   # though the build had succeeded (that is exactly how a missing native can
+   # reach the game and abort OnInit).
+   $dll = Join-Path $outDll 'ERC.dll'
+   Remove-Item $dll -Force -ErrorAction SilentlyContinue
 
-# Link intermediates are not part of the shipped mod.
-foreach ($junk in @('ERC.lib', 'ERC.exp')) {
-    Remove-Item (Join-Path $outDll $junk) -Force -ErrorAction SilentlyContinue
-}
+   $dllOut = cmd /c "`"$bat`"" 2>&1
+   $dllCode = $LASTEXITCODE
+   $dllOut | Where-Object { $_ -notmatch '^\s*$' } | ForEach-Object { Write-Host "        $_" }
+   if ($dllCode -ne 0) { Fail "ERC.dll compilation failed (cl exit $dllCode)" }
 
-$dll = Join-Path $outDll 'ERC.dll'
-if (-not (Test-Path $dll)) { Fail 'ERC.dll was not produced' }
+   # Link intermediates are not part of the shipped mod.
+   foreach ($junk in @('ERC.lib', 'ERC.exp')) {
+       Remove-Item (Join-Path $outDll $junk) -Force -ErrorAction SilentlyContinue
+   }
+
+   if (-not (Test-Path $dll)) { Fail 'ERC.dll was not produced' }
 
 # --- 4. EldenRingCombat.esp -------------------------------------------------
 # The quest record is what attaches ERC_PlayerCombat to the player alias; no
@@ -158,9 +178,12 @@ if (-not (Test-Path $dll)) { Fail 'ERC.dll was not produced' }
 # MCP server and is verified by two independent parsers (see build_esp.ps1).
 $esp = Join-Path $root 'data\EldenRingCombat.esp'
 if (-not $SkipEsp) {
-    Step 'Authoring EldenRingCombat.esp (houseCARL MCP)...'
-    & powershell -NoProfile -ExecutionPolicy Bypass `
-        -File (Join-Path $PSScriptRoot 'esp\build_esp.ps1') -Mo2Path $Mo2Path
+    # Built by our own generator rather than the houseCARL MCP round trip: the
+    # record layout is now pinned by xEdit-verified bytes, and the file has two
+    # quests (player alias + MCM registration), which the generator keeps in
+    # lockstep with the SEQ.
+    Step 'Authoring EldenRingCombat.esp...'
+    & py (Join-Path $PSScriptRoot 'esp\build_esp.py') 2>&1 | ForEach-Object { Write-Host "        $_" }
     if ($LASTEXITCODE -ne 0) { Fail 'ESP build failed' }
 }
 elseif (-not (Test-Path $esp)) {

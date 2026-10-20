@@ -47,9 +47,10 @@ Defaults used (override with the parameters shown):
 | `-VsDevCmd` | `...\Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat` |
 | `-Mo2Path` | `F:\Modlists\JOJ` (where the ESP is authored) |
 
-It compiles the Papyrus script, builds the SDK static libraries on first run,
-links `ERC.dll`, authors `EldenRingCombat.esp` through the houseCARL MCP server,
-writes its `.seq`, and verifies the plugin with two independent parsers.
+It compiles the Papyrus scripts (`ERC_PlayerCombat.psc` and `ERC_MCM.psc`), builds
+the SDK static libraries on first run, links `ERC.dll`, generates
+`EldenRingCombat.esp` and its `.seq` with `tools\esp\build_esp.py`, and verifies
+the plugin with two independent parsers.
 
 Add `-SkipSdkBuild` once the SDK libraries exist, `-SkipEsp` to leave the plugin
 alone.
@@ -59,9 +60,10 @@ alone.
 | Artifact | Result |
 |---|---|
 | `ERC_PlayerCombat.pex` | **0 errors, 0 warnings** — PapyrusCompiler from the CK install |
+| `ERC_MCM.pex` | compiles against MCM Helper's public base scripts (vendored in `tools\vendor\mcm-helper`) |
 | `ERC.dll` | **links clean**, exports `SKSEPlugin_Load` + `SKSEPlugin_Version` |
 | SDK | `skse64_0x01064920.lib` (runtime `0x01064920` = 1.6.1170) |
-| `EldenRingCombat.esp` | 351 bytes; parsed identically by this repo's byte reader, `esper` (skyrimck MCP) and xEdit |
+| `EldenRingCombat.esp` | 484 bytes, **two** quests; parsed identically by this repo's byte reader and xEdit |
 
 ---
 
@@ -73,61 +75,78 @@ symbol exists), so the script hangs off a **quest ReferenceAlias** — Skyrim's 
 supported way to run a script on the player is a start-game-enabled quest whose
 alias is forced to the Player reference.
 
-`tools\esp\build_esp.ps1` does this headlessly, so the Creation Kit is not
-required:
+`tools\esp\build_esp.py` writes it deterministically — no Creation Kit, no MCP
+server, no network:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\esp\build_esp.ps1             # author + verify
-powershell -ExecutionPolicy Bypass -File tools\esp\build_esp.ps1 -XEditVerify # + xEdit re-read
+py tools\esp\build_esp.py        # writes data\EldenRingCombat.esp and data\SEQ\EldenRingCombat.seq
+py tools\esp\verify_esp.py       # byte-level check of the result
 ```
+
+(The older `tools\esp\build_esp.ps1` + houseCARL path still exists for reference,
+but `tools\build.ps1` now calls the Python writer.)
 
 | Stage | Tool | What it guarantees |
 |---|---|---|
-| Author | `houseCARL` MCP (`housecarl_create`) | Every write is validated against the Skyrim record schema before any byte is written, and the file is re-read after writing. |
-| Data record | `tools\housecarl\params-create-quest.json` | The whole plugin is one declarative document: quest, alias, VMAD. |
-| `.seq` | `houseCARL` MCP (`housecarl_write_seq`) | A start-game-enabled quest in a non-master plugin only starts if `Data\SEQ\<plugin>.seq` exists. |
-| Verify | `skyrimck` MCP (`esp_verify`, esper) | Header, masters, record count. |
-| Verify | `tools\esp\verify_esp.py` | Byte-level: subrecord order, DNAM flags, ALFR link, VMAD layout. |
-| Verify | `tools\xedit\ERC_VerifyEsp.pas` (`-XEditVerify`) | xEdit's own parser, the closest thing to the game's loader. |
-
-Both MCP servers are declared in `.cursor\mcp.json`; the script reads their paths
-from there. `tools\mcp\mcp-client.ps1` is a small stdio JSON-RPC client, so the
-same tools work from a plain shell (and from `tools\build.ps1`).
-
-`-Offline` instead runs `tools\esp\build_esp.py`, a dependency-free Python writer
-that needs no MCP server (it does not write the `.seq`).
+| Author | `tools\esp\build_esp.py` | Emits the whole plugin from constants: header, quest group, VMAD, `.seq`. |
+| Verify | `tools\esp\verify_esp.py` | Byte-level: subrecord order, DNAM flags, ALFR link, VMAD layout and byte-exact tail. |
+| Verify | `tools\esp\patch-quest-flags.py` + `inspect-plugin.py` | Independent re-read of GRUP sizes and quest flags. |
+| Verify | `tools\xedit\ERC_VerifyEsp.pas` | xEdit's own parser, the closest thing to the game's loader. Needs Skyrim closed — xEdit will not start a script run while the game holds the plugin files. |
 
 ### What the plugin contains
 
 | Part | Value |
 |---|---|
-| Quest | `ERC_PlayerCombatQuest` "Elden Ring Combat", Start Game Enabled, priority 60 |
+| Quest 0 | `ERC_PlayerCombatQuest` "Elden Ring Combat", Start Game Enabled, priority 60 |
 | Alias 0 | `Player`, forced reference `Skyrim.esm:00000014` (`PlayerRef`) |
 | VMAD | `ERC_PlayerCombat` attached to alias 0, no properties |
+| Quest 1 | `ERC_MCMQuest`, Start Game Enabled — exists only to host `ERC_MCM` |
+| VMAD | `ERC_MCM` attached to the quest itself (quest-level script, no aliases) |
 
-Two byte-level details that look wrong but are not, and cost hours if assumed
+Quest 1 is what makes the MCM appear. MCM Helper does **not** scan
+`Data/MCM/Config`; `ConfigStore::ReadConfigs` walks SkyUI's already-registered
+config list and reads `Data/MCM/Config/<plugin name>/config.json` for each entry.
+A JSON file nobody claims is skipped without a log line. Registration comes from
+the base scripts: `SKI_ConfigBase.OnInit` → `OnGameReload` →
+`SKICP_configManagerReady` → `RegisterMod`, which is why `ERC_MCM` overrides no
+events at all (overriding `OnInit` would suppress that chain, since Papyrus does
+not call parent events).
+
+Three byte-level details that look wrong but are not, and cost hours if assumed
 otherwise:
 
-- **The record's high byte is the master count**, not zero: with `Skyrim.esm` +
-  `Update.esm` as masters the record is `0x02000800` in the file. `Update.esm`
-  itself stores its own records as `01002ECE`. The loader swaps that byte for the
-  plugin's load-order index at runtime, which is why xEdit shows `05000800` here.
+- **The record's high byte is the master count**, not zero: this plugin has one
+  master (`Skyrim.esm`), so its records are `0x01xxxxxx` in the file. The loader
+  swaps that byte for the plugin's load-order index at runtime, which is why the
+  console and xEdit show a different prefix.
 - **The alias block in VMAD is `u16 zero, u16 alias id, u32 quest form id`** —
   `u16 zero` first. Skyrim.esm `000B113D` (alias block naming alias 4) proves the
   order; reading the FormID first makes every block parse one field early.
+- **A VMAD that only carries a quest script still has a fragment file name.** The
+  tail is `u8 bind version, u16 fragment count, wstring script file name, u16
+  alias block count` — the empty file name is a real `0000` field. Omit it and the
+  alias count is read from the wrong offset; the record becomes malformed and
+  xEdit reports it with a modal error dialog, which looks exactly like xEdit
+  hanging (no log, no sentinel, no output).
 
 ### Installing the plugin
 
-The build leaves `data\EldenRingCombat.esp` and `data\SEQ\EldenRingCombat.seq` in
-the repo. `houseCARL` also leaves a copy in a `houseCARL - EldenRingCombat` MO2 mod
-folder; either install that folder or copy the two files into your own mod. The
-`.seq` must sit at `<mod>\SEQ\EldenRingCombat.seq` (or `Data\SEQ\`) or the quest —
-and so the script — silently never starts.
+The build leaves `data\EldenRingCombat.esp`, `data\SEQ\EldenRingCombat.seq` and
+`data\scripts\ERC_MCM.pex` in the repo. Copy `data\` into your mod folder (or use
+`tools\deploy.ps1` if present). The `.seq` must sit at
+`<mod>\SEQ\EldenRingCombat.seq` (or `Data\SEQ\`) or both quests — and so both
+scripts — silently never start.
 
 > **Note on CK versions.** The CK here is 1.7.99 while the game runtime is
 > 1.6.1170. The SSE form version is unchanged between them, so the plugin loads —
-> but verify the quest is present in game (`sqv ERC_PlayerCombatQuest` in the
-> console) on first run.
+> but check in game that **both** quests are running (`sqv ERC_PlayerCombatQuest`
+> and `sqv ERC_MCMQuest`) on first run.
+>
+> `sqv ERC_PlayerCombatQuest` listing no variables is **not** an error: the
+> player script lives on the quest's *alias*, not on the quest, so `sqv` has
+> nothing to print for it. The proof is the Papyrus log line
+> `ERC: TK Dodge RE present - deferring the roll`, which only the alias script
+> writes.
 
 ---
 

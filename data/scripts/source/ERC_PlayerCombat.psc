@@ -282,6 +282,10 @@ endFunction
 
 ; Read every tunable from the plugin (which merges its ini and MCM Helper's).
 function RefreshSettings()
+	; The DLL caches its settings from load time. MCM Helper writes changes to
+	; Data\MCM\Settings\EldenRingCombat.ini, so without this re-read every MCM
+	; slider would look inert until the game was restarted.
+	ERC_PlayerCombat.ERC_ReloadSettings()
 	m_rollStaminaCost   = ERC_PlayerCombat.ERC_GetFloat("RollStaminaCost")
 	m_hitStopSeconds    = ERC_PlayerCombat.ERC_GetFloat("HitStopSeconds")
 	m_hitStopScale      = ERC_PlayerCombat.ERC_GetFloat("HitStopScale")
@@ -551,3 +555,5 @@ bool function ERC_HasTKDodge() global native
 
 ; Open the i-frame window for the first IframeFraction of afDurationSeconds.
 function ERC_RollStarted(float afDurationSeconds) global native
+; Re-reads both ini files (plugin defaults + MCM Helper user settings).
+function ERC_ReloadSettings() global native

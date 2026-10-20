@@ -58,12 +58,17 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 | **SKSE 2.2.6** (for 1.6.1170) | loading `ERC.dll` | Must match the runtime exactly. |
 | **MCM Helper** | the settings menu | Ships with JOJ. |
 | **TK Dodge RE + I-Frame Generator** | the animated roll | Ships with JOJ. Detected automatically; ERC stands down from its own roll when present. |
-| **Creation Kit** | Papyrus compilation | Compiles `ERC_PlayerCombat.psc`. The `.esp` itself is built headlessly. |
+| **Creation Kit** | Papyrus compilation | Compiles `ERC_PlayerCombat.psc` and `ERC_MCM.psc`. The `.esp` itself is built by a Python writer. |
 | **SKSE plugin SDK + MSVC** | building `ERC.dll` | See `docs/BUILD.md`. |
-| **houseCARL + skyrimck MCP** | authoring/verifying the `.esp` | Optional; `-Offline` uses a Python writer instead. |
 
 > **Both halves are required.** The Papyrus script calls `ERC_*` natives, so without
 > `ERC.dll` it throws on the first call — there is no silent partial mode.
+>
+> **The MCM needs a quest, not just a JSON file.** MCM Helper reads
+> `Data/MCM/Config/<plugin>/config.json` only for a *running quest in that plugin
+> whose script derives from `MCM_ConfigBase`*. `ERC_MCMQuest` + `ERC_MCM.psc` is
+> that quest; without it the menu is skipped silently (no log line at all). See
+> `docs/BUILD.md`.
 
 ## Install
 
@@ -71,8 +76,9 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
    ```powershell
    powershell -ExecutionPolicy Bypass -File tools\build.ps1
    ```
-   This produces `data/scripts/ERC_PlayerCombat.pex`, `data/SKSE/Plugins/ERC.dll`,
-   `data/EldenRingCombat.esp` and `data/SEQ/EldenRingCombat.seq` — a complete mod.
+   This produces `data/scripts/ERC_PlayerCombat.pex`, `data/scripts/ERC_MCM.pex`,
+   `data/SKSE/Plugins/ERC.dll`, `data/EldenRingCombat.esp` and
+   `data/SEQ/EldenRingCombat.seq` — a complete mod.
 2. **Install** the `data/` contents (`scripts/`, `MCM/`, `SKSE/Plugins/ERC.dll`, the
    `.esp` and `SEQ/`) into your mod manager as a normal mod, placed after BFCO in
    load order.
@@ -87,6 +93,7 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 EldenRingCombat/
 ├─ data/
 │  ├─ scripts/source/ERC_PlayerCombat.psc   ← combat logic (extends ReferenceAlias)
+│  ├─ scripts/source/ERC_MCM.psc            ← MCM registration quest script (extends MCM_ConfigBase)
 │  ├─ MCM/Config/EldenRingCombat/           ← MCM Helper menu + defaults
 │  └─ SKSE/Plugins/                         ← built ERC.dll goes here
 ├─ plugin/                                  ← C++ source of ERC.dll
@@ -95,7 +102,8 @@ EldenRingCombat/
 │  └─ validation/                           ← mock SDK + build-check.bat
 ├─ tools/
 │  ├─ build.ps1                             ← builds .pex + ERC.dll + the .esp
-│  ├─ esp/                                  ← ESP authoring + byte-level verifier
+│  ├─ esp/                                  ← ESP generator + byte-level verifier
+│  ├─ vendor/mcm-helper/                    ← MCM Helper public base scripts (compile only)
 │  ├─ housecarl/                            ← the quest record spec (JSON)
 │  ├─ mcp/                                  ← stdio MCP client used by the build
 │  ├─ xedit/                                ← headless xEdit verifier

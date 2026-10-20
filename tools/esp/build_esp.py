@@ -30,6 +30,7 @@ import struct
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[2] / "data" / "EldenRingCombat.esp"
+SEQ = Path(__file__).resolve().parents[2] / "data" / "SEQ" / "EldenRingCombat.seq"
 
 PLUGIN_NAME = "EldenRingCombat.esm"   # author field, cosmetic
 MASTERS = ["Skyrim.esm"]
@@ -43,11 +44,20 @@ AUTHOR = "EldenRingCombat"
 # masters, records at 0x02xxxxxx).
 SELF_INDEX = len(MASTERS)
 QUEST_FORMID = (SELF_INDEX << 24) | 0x00000800
+MCM_QUEST_FORMID = (SELF_INDEX << 24) | 0x00000801
 QUEST_EDID = "ERC_PlayerCombatQuest"
 QUEST_NAME = "Elden Ring Combat"
 SCRIPT_NAME = "ERC_PlayerCombat"
 ALIAS_NAME = "Player"
 PLAYER_REF = 0x00000014              # Skyrim.esm:00000014
+
+# A second, otherwise empty quest whose only job is to give MCM Helper something
+# to bind the menu to. MCM Helper resolves the config path from the *plugin that
+# owns the quest running an MCM_ConfigBase script*, so without this quest
+# Data/MCM/Config/EldenRingCombat/config.json is never read -- and MCM Helper
+# does not log that it skipped it. See data/scripts/source/ERC_MCM.psc.
+MCM_QUEST_EDID = "ERC_MCMQuest"
+MCM_SCRIPT_NAME = "ERC_MCM"
 
 FLAG_START_GAME_ENABLED = 0x0100      # DNAM; verified against Skyrim.esm MQ101
 FLAG_RUN_ONCE = 0x0001                # DNAM; what MCM-style quests conventionally set
@@ -129,6 +139,46 @@ def build_vmad(quest_formid: int, alias_index: int, script: str) -> bytes:
 # --------------------------------------------------------------------------
 # quest
 # --------------------------------------------------------------------------
+def build_vmad_quest_script(script: str) -> bytes:
+    """VMAD carrying a single script on the quest itself (no aliases).
+
+    Layout: version, object format, quest script count, then per script
+    (wstring name, u8 flags, u16 property count), then:
+        u8  extra bind-data version
+        u16 fragment count
+        wstring fragment script file name   <-- present even when empty
+        u16 alias block count
+
+    That file-name field is easy to miss and its absence is not caught by
+    anything at build time: the alias count then reads from the file name's
+    length word, the record is malformed, and xEdit reports it with a modal
+    error dialog -- which looks like xEdit hanging. Cross-checked against
+    Precision.esp's Precision_MCM_Quest, whose tail is
+    02 0000 0000 0100 (bind, no fragments, no file name, 1 alias block).
+    """
+    out = struct.pack("<HHH", 5, 2, 1)      # version, object format, 1 script
+    out += wstring(script)
+    out += bytes([0])                       # script flags: local
+    out += struct.pack("<H", 0)             # property count
+    out += bytes([2])                       # extra bind data version
+    out += struct.pack("<H", 0)             # fragment count
+    out += struct.pack("<H", 0)             # fragment script file name (empty)
+    out += struct.pack("<H", 0)             # alias block count
+    return out
+
+
+def build_mcm_quest(formid: int) -> bytes:
+    data = b""
+    data += subrecord(b"EDID", zstring(MCM_QUEST_EDID))
+    data += subrecord(b"VMAD", build_vmad_quest_script(MCM_SCRIPT_NAME))
+    data += subrecord(b"FULL", zstring(QUEST_NAME))
+    data += subrecord(b"DNAM", struct.pack(
+        "<HBBHHI", FLAG_START_GAME_ENABLED | FLAG_RUN_ONCE, PRIORITY, 0, 0, 0, 0))
+    data += subrecord(b"NEXT", b"")
+    data += subrecord(b"ANAM", struct.pack("<I", 0))   # no aliases
+    return record(b"QUST", formid, data)
+
+
 def build_quest(formid: int) -> bytes:
     data = b""
     data += subrecord(b"EDID", zstring(QUEST_EDID))
@@ -167,11 +217,20 @@ def build_header(num_records: int, next_object_id: int) -> bytes:
 
 
 def build_plugin(include_quest: bool = True) -> bytes:
-    header = build_header(1 if include_quest else 0,
-                          QUEST_FORMID + 1 if include_quest else 0x800)
     if not include_quest:
-        return header
-    return header + group(b"QUST", build_quest(QUEST_FORMID))
+        return build_header(0, 0x800)
+    quests = [build_quest(QUEST_FORMID), build_mcm_quest(MCM_QUEST_FORMID)]
+    header = build_header(len(quests), MCM_QUEST_FORMID + 1)
+    return header + group(b"QUST", b"".join(quests))
+
+
+def seq_bytes(formids) -> bytes:
+    """A .seq is a bare array of FormIDs -- no count, no header.
+
+    Verified against 157 real .seq files in this modlist: e.g.
+    AlternatePerspective.seq is 8 bytes for two quests, Alit.seq is 4 for one.
+    """
+    return b"".join(struct.pack("<I", f) for f in formids)
 
 
 def main():
@@ -182,6 +241,16 @@ def main():
     OUT.write_bytes(blob)
     kind = "stub (header only)" if stub else "plugin"
     print(f"wrote {kind} {OUT} ({len(blob)} bytes)")
+
+    if not stub:
+        # Keep the SEQ in lockstep with the quests, including the MCM quest: a
+        # quest missing from it never starts, so its script never registers.
+        seq = seq_bytes([QUEST_FORMID, MCM_QUEST_FORMID])
+        SEQ.parent.mkdir(parents=True, exist_ok=True)
+        SEQ.write_bytes(seq)
+        print(f"wrote SEQ {SEQ} ({len(seq)} bytes, "
+              f"{len(seq) // 4} quests: "
+              f"{QUEST_FORMID:08X}, {MCM_QUEST_FORMID:08X})")
 
 
 if __name__ == "__main__":

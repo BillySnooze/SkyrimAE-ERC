@@ -55,6 +55,15 @@ namespace
 		return ERCPlugin::Get().HasTKdodge();
 	}
 
+	// Re-reads Data/SKSE/Plugins/EldenRingCombat.ini and MCM Helper's
+	// Data/MCM/Settings/EldenRingCombat.ini. Without this the DLL's in-memory
+	// copy is whatever it read at plugin load, so every MCM slider would appear
+	// to do nothing until the game was restarted.
+	void ReloadSettingsNative(StaticFunctionTag*)
+	{
+		ERCPlugin::Get().LoadSettings();
+	}
+
 	// --- i-frames / hit-stop ----------------------------------------------
 	void RollStartedNative(StaticFunctionTag*, float afDurationSeconds)
 	{
@@ -89,5 +98,7 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
 		"ERC_RollStarted", cls, RollStartedNative, registry));
 
+	registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, void>(
+		"ERC_ReloadSettings", cls, ReloadSettingsNative, registry));
 	return true;
 }

@@ -77,15 +77,19 @@ def main():
              "expected Skyrim.esm")
     if num_records < 1:
         fail("header claims no records")
-    if num_records != 1:
-        # Advisory only: Skyrim.esm's own HEDR says 920181 for 869688 records,
-        # so nothing reads this number. Mutagen counts one extra here.
-        print(f"note: header record count is {num_records}, for 1 record")
 
     quests = [r for r in tes5.iter_records(buf) if r.sig == b"QUST"]
-    if len(quests) != 1:
-        fail(f"expected 1 QUST, found {len(quests)}")
-    quest = quests[0]
+    if len(quests) != 2:
+        fail(f"expected 2 QUST (player + MCM), found {len(quests)}")
+    if num_records != len(quests):
+        # Advisory only: nothing reads HEDR's record count (Skyrim.esm's own
+        # value disagrees with its real record count), but keep it tidy.
+        print(f"note: header record count is {num_records}, for {len(quests)} records")
+    # Order in the group is by FormID: 0x800 (player) then 0x801 (MCM).
+    quest = next((q for q in quests if (q.formid & 0xFFFFFF) == 0x800), None)
+    mcm = next((q for q in quests if (q.formid & 0xFFFFFF) == 0x801), None)
+    if quest is None or mcm is None:
+        fail("expected one QUST at 0x800 and one at 0x801")
     print(f"quest: {quest.zstring(b'EDID')} formid={quest.formid:08X} "
           f"name={quest.zstring(b'FULL')}")
 
@@ -199,6 +203,54 @@ def main():
         fail("script should have no properties")
     if off != len(v):
         fail(f"VMAD has {len(v) - off} trailing bytes")
+
+    # --- the MCM quest ------------------------------------------------------
+    # This is the quest MCM Helper needs in order to read
+    # Data/MCM/Config/EldenRingCombat/config.json at all: it derives that path
+    # from the plugin owning the quest that runs an MCM_ConfigBase script.
+    print(f"mcm quest: {mcm.zstring(b'EDID')} formid={mcm.formid:08X}")
+    if mcm.zstring(b"EDID") != "ERC_MCMQuest":
+        fail("MCM quest EDID is not ERC_MCMQuest")
+    mdnam = mcm.sub(b"DNAM")
+    mflags = struct.unpack_from("<H", mdnam, 0)[0]
+    print(f"  DNAM: flags={mflags:#06x} priority={struct.unpack_from('<B', mdnam, 2)[0]}")
+    if not mflags & 0x0100:
+        fail("MCM quest is not Start Game Enabled, so its script never runs")
+    if struct.unpack("<I", mcm.sub(b"ANAM"))[0] != 0:
+        fail("MCM quest should declare no aliases")
+    mv = mcm.sub(b"VMAD")
+    if not mv:
+        fail("MCM quest has no VMAD, so no script is attached")
+    mver, mfmt, mscripts = struct.unpack_from("<HHH", mv, 0)
+    moff = 6
+    names = []
+    for _ in range(mscripts):
+        nm, _sflags, _props, moff = read_script(mv, moff)
+        names.append(nm)
+    print(f"  VMAD: version={mver} fmt={mfmt} quest_scripts={names}")
+    if (mver, mfmt) != (5, 2):
+        fail(f"unexpected MCM VMAD version/format {mver}/{mfmt}")
+    if names != ["ERC_MCM"]:
+        fail(f"MCM quest scripts are {names}, expected ['ERC_MCM']")
+    # Tail: bind version, fragment count, fragment file name, alias count.
+    # Omitting the (usually empty) file name shifts everything after it, and the
+    # only symptom is xEdit showing a load-error dialog and never running.
+    m_bind = mv[moff]
+    m_frags = struct.unpack_from("<H", mv, moff + 1)[0]
+    m_fname_len = struct.unpack_from("<H", mv, moff + 3)[0]
+    m_alias_off = moff + 5 + m_fname_len
+    m_aliases = struct.unpack_from("<H", mv, m_alias_off)[0]
+    m_end = m_alias_off + 2
+    print(f"  tail: bind={m_bind} fragments={m_frags} "
+          f"fragment_file_len={m_fname_len} alias_blocks={m_aliases}")
+    if m_bind != 2:
+        fail(f"MCM VMAD extra bind data version is {m_bind}, expected 2")
+    if m_frags or m_fname_len:
+        fail("MCM quest should carry no fragments and no fragment file name")
+    if m_aliases != 0:
+        fail(f"MCM quest should declare no aliases, it has {m_aliases} blocks")
+    if m_end != len(mv):
+        fail(f"MCM VMAD has {len(mv) - m_end} trailing bytes")
 
     print("OK: plugin structure verified")
 

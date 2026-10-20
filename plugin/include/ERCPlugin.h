@@ -54,8 +54,10 @@ public:
 	void OnRollEnded();
 	bool InIframeWindow() const;
 
-	// --- hit-stop -------------------------------------------------------------
-	void TriggerHitStop(float seconds);
+	// Hit-stop is NOT here: Skyrim's timescale is the `TimeScale` global
+	// (Skyrim.esm 0x0000003A), which Papyrus can write through
+	// GlobalVariable.SetValue without any address lookup. Applying it from C++
+	// would have needed the [HOOK-2] address, so it lives in the script.
 
 	// Called once per frame from the game update hook ([HOOK-1]), if installed.
 	void Update();
@@ -74,10 +76,6 @@ private:
 
 	bool  _inIframe      = false;
 	double _iframeEndTime = 0.0;
-
-	bool  _hitStopActive  = false;
-	double _hitStopEndTime = 0.0;
-	float _savedTimeScale = 1.0f;
 
 	int   _pendingDodgeTap = -1;
 };

@@ -161,7 +161,7 @@ configs), or turn off **Enable Guard Break** until you have names that exist.
 | Potential conflict | Resolution |
 |---|---|
 | TK Dodge RE vs ERC both rolling on Left Alt | Handled: ERC defers by default. If you turn deferral off while TK Dodge RE is installed, you will roll twice and pay both stamina costs. |
-| Two hit-stop mods | ERC saves and restores the prior timescale, but avoid stacking two hit-stop mods. |
+| Two hit-stop mods | JOJ has none that dip the global timescale — `Timed Block-Dodge and Counter` freezes only the attacker's animation, and Valhalla's slow-time is scoped to timed blocks, so ordinary hits do not overlap. If you add a global-timescale hit-stop mod, disable one of them: ERC restores its own saved value, which would clobber the other's dip. |
 | Stagger double-playing (BFCO hit-reactions + ERC) | If both fire, unset ERC's stagger names or disable **Enable Guard Break**; BFCO's moveset reactions are animation-authored and usually look better. |
 | `iFrameDuration` ignored | I-Frame Generator RE must be installed (it is, in JOJ) — TK Dodge RE does not provide i-frames itself. |
 
@@ -171,6 +171,8 @@ configs), or turn off **Enable Guard Break** until you have names that exist.
 2. Papyrus log shows no `Unbound native function` from `ERC_PlayerCombat`.
 3. MCM shows **Elden Ring Combat** with Combat / Stagger / Movement / Animations.
 4. Tap Left Alt → one roll, one stamina cost (10, not 22), with i-frames.
-5. Take a hit → flinch/stagger per your configured names.
-6. Hit-stop still needs `[HOOK-2]` (see `docs/SKSE-API-NOTES.md`); until then no
-   freeze is expected.
+5. Take a hit → a brief world freeze (hit-stop), then flinch/stagger per your
+   configured names. Hit-stop is ERC's, so turning off **Enable Hit-Stop** should
+   remove the freeze without affecting the roll or stagger.
+6. I-frame *damage* nullification still needs `[HOOK-2]`; in JOJ the roll's
+   invincibility comes from I-Frame Generator, so it works regardless.

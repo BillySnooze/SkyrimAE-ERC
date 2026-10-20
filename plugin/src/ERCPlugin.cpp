@@ -255,34 +255,6 @@ bool ERCPlugin::InIframeWindow() const
 }
 
 // ----------------------------------------------------------------------------
-//  Hit-stop
-// ----------------------------------------------------------------------------
-// [HOOK-2] Applying the timescale dip needs the game's own timescale setting.
-// The official plugin API exposes no call for that, so this is the version-
-// specific part (CommonLibSSE-NG's Calendar, or a signature-scanned global).
-// It is deliberately isolated here and logs nothing per frame.
-static void ApplyTimeScale(float scale)
-{
-	(void)scale;
-	// TODO(HOOK-2): set the game's fTimeScale equivalent. See docs/BUILD.md.
-}
-
-void ERCPlugin::TriggerHitStop(float seconds)
-{
-	if (seconds <= 0.0f)
-	{
-		return;
-	}
-	if (!_hitStopActive)
-	{
-		_savedTimeScale = 1.0f;
-	}
-	_hitStopActive = true;
-	_hitStopEndTime = Now() + seconds;
-	ApplyTimeScale(GetFloat("HitStopScale"));
-}
-
-// ----------------------------------------------------------------------------
 //  Tick
 // ----------------------------------------------------------------------------
 void ERCPlugin::Update()
@@ -290,12 +262,6 @@ void ERCPlugin::Update()
 	if (_inIframe && Now() >= _iframeEndTime)
 	{
 		OnRollEnded();
-	}
-
-	if (_hitStopActive && Now() >= _hitStopEndTime)
-	{
-		_hitStopActive = false;
-		ApplyTimeScale(_savedTimeScale);
 	}
 }
 

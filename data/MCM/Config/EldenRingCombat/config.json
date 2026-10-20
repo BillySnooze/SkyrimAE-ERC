@@ -63,21 +63,21 @@
           "id": "fHitStopSeconds:Combat",
           "type": "slider",
           "text": "Hit-Stop Duration",
-          "help": "How long the world freezes on impact, in seconds.",
+          "help": "Real seconds the world freezes when an impact lands. ELDEN RING uses roughly 0.04-0.08.",
           "valueOptions": { "min": 0, "max": 0.3, "step": 0.01, "sourceType": "ModSettingFloat", "defaultValue": 0.06 }
         },
         {
           "id": "fHitStopScale:Combat",
           "type": "slider",
           "text": "Hit-Stop Timescale",
-          "help": "Timescale multiplier during hit-stop. Lower = harder freeze.",
+          "help": "Timescale multiplier during the freeze, relative to Skyrim's TimeScale global (20.0). 0.15 makes the world run at 15% speed; lower = harder freeze. Reaches 1.0 for no slowdown.",
           "valueOptions": { "min": 0.05, "max": 1, "step": 0.05, "sourceType": "ModSettingFloat", "defaultValue": 0.15 }
         },
         {
           "id": "bEnableHitStop:Combat",
           "type": "toggle",
           "text": "Enable Hit-Stop",
-          "help": "Freeze on impact, like ELDEN RING.",
+          "help": "Freeze on impact, like ELDEN RING. Fires when you are struck (including blocked hits); freezing on your own outgoing hits needs the native combat-hit hook, which is not implemented yet.",
           "valueOptions": { "sourceType": "ModSettingBool", "defaultValue": true }
         },
         {

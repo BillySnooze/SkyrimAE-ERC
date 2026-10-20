@@ -27,10 +27,52 @@ CommonLibSSE-NG. The port removed the event bridge instead:
 - **Dodge input:** Papyrus polls the key itself (`Input.IsKeyPressed`) every
   0.03s and splits tap (roll) from hold (sprint). No C++ input hook needed for
   keyboard play.
-- **I-frames / hit-stop:** the plugin owns the timing; Papyrus calls
-  `ERC_RollStarted()` when a roll begins.
+- **I-frames:** the plugin owns the timing; Papyrus calls `ERC_RollStarted()`
+  when a roll begins. (In JOJ the roll — and its i-frames via I-Frame Generator —
+  belong to TK Dodge RE, so this path is the fallback.)
+- **Hit-stop:** implemented entirely in Papyrus, because Skyrim's timescale is
+  writable without an address. See "Hit-stop" below.
 - `ERC_ConsumeDodgeTap()` is still registered for a future input hook that can
   also supply a lock-on direction.
+
+### Hit-stop — why it is Papyrus and not `[HOOK-2]`
+
+Skyrim's timescale is **not** an INI setting. Parsing `Skyrim.esm` finds
+`GLOB` FormID `0x0000003A`, EDID `TimeScale`, value `20.0` (20 game minutes per
+real minute) — the same global the console's `set timescale` writes. There is no
+`fTimeScale:Gameplay` game setting in `Skyrim.esm`, so
+`Utility.SetINIFloat("fTimeScale:Gameplay", x)` silently does nothing.
+
+A global is writable from Papyrus:
+
+```papyrus
+GlobalVariable ts = Game.GetFormFromFile(0x0000003A, "Skyrim.esm") as GlobalVariable
+ts.SetValue(ts.GetValue() * scale)   ; dip; restore the saved value after
+```
+
+That needs no address, no signature scan and no version-specific hook, so the
+`ApplyTimeScale()` stub was deleted along with the `ERC_TriggerHitStop` native.
+
+The one real trap is **timing**: every Papyrus timer (`RegisterForSingleUpdate`,
+`Wait`) counts *scaled* game time, so a delay registered around a dip is
+stretched by the dip itself — and a delay shorter than one frame's game time
+collapses to a single frame regardless. So the restore is polled in **real**
+time (`Utility.GetCurrentRealTime()`, which ignores timescale) at a
+`RegisterForSingleUpdate(0.001)` interval that effectively means "next frame".
+The restore is therefore frame-accurate and independent of when the engine
+applies the dip.
+
+Safety: the saved value and the active flag are script variables, which persist
+in the save, so a save taken mid-dip restores correctly on load; the MCM closing
+and `OnPlayerLoadGame` both force a restore as watchdogs, since Papyrus timers
+pause in menu mode.
+
+Known limitation: `OnHit` fires on the reference that *was hit*, so this triggers
+when the player is struck (including blocked hits). Freezing on the player's own
+outgoing hits needs a combat-hit hook in C++ (`TESHitEvent`), which is not
+implemented. `ActiveMagicEffect` does have an `OnHit` event, so a cloak effect
+could reach enemies, but that would mean shipping a magic effect and applying it
+to every nearby actor — out of proportion to the benefit.
 
 ## Papyrus native registration (as implemented)
 
@@ -41,8 +83,7 @@ registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, float, BSFixed
 ```
 
 Registered names: `ERC_GetFloat`, `ERC_GetInt`, `ERC_GetBool`, `ERC_GetString`,
-`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_HasTKDodge`, `ERC_RollStarted`,
-`ERC_TriggerHitStop`.
+`ERC_SetFloat`, `ERC_ConsumeDodgeTap`, `ERC_HasTKDodge`, `ERC_RollStarted`.
 
 `ERC_HasTKDodge` is how the script decides whether to own the roll: the plugin
 checks for `Data\SKSE\Plugins\TK Dodge RE.ini` at load. Since TK Dodge RE's

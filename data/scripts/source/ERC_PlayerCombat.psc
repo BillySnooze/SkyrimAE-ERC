@@ -33,6 +33,7 @@ scriptname ERC_PlayerCombat extends ReferenceAlias hidden
 ; --- Cached settings (mirrors of the plugin's values) -----------------------
 float m_rollStaminaCost   = 12.0
 float m_hitStopSeconds    = 0.06
+float m_hitStopScale      = 0.15
 bool  m_enableRolls       = true
 bool  m_enableHitStop     = true
 bool  m_enableGuardBreak  = true
@@ -97,6 +98,34 @@ float m_keyDownTime = 0.0
 float UPDATE_INTERVAL = 0.03
 
 ; ============================================================================
+;  HIT-STOP STATE
+; ============================================================================
+;  Skyrim's timescale is NOT an INI setting -- it is the global variable
+;  `TimeScale` in Skyrim.esm (FormID 0x0000003A, default 20.0, i.e. 20 game
+;  minutes per real minute). That is what the console's `set timescale` writes,
+;  and it is why Utility.SetINIFloat("fTimeScale:Gameplay", ...) does nothing:
+;  there is no such game setting in Skyrim.esm. Verified by parsing the ESM
+;  (GLOB 0x3A, EDID "TimeScale", FLTV 20.0).
+;
+;  So hit-stop is a GlobalVariable.SetValue() dip. That needs no addresses and
+;  no runtime hook -- it is stable Papyrus.
+;
+;  Why the timing is polled in REAL time at ~frame rate: every Papyrus timer
+;  (RegisterForSingleUpdate/Wait) counts *scaled* game time, so a delay
+;  registered around a timescale dip is stretched by the very dip it is timing.
+;  Utility.GetCurrentRealTime() is wall clock and ignores timescale and VM
+;  freezes, so the deadline is absolute. HITSTOP_POLL is tiny on purpose: it
+;  means "next frame", giving a frame-accurate restore without arithmetic that
+;  depends on when the engine applies the dip.
+int   TIME_SCALE_FORM = 0x0000003A
+float HITSTOP_POLL    = 0.001
+
+GlobalVariable m_timeScaleGlobal
+bool  m_hitStopActive  = false
+float m_savedTimeScale = 20.0     ; Skyrim's default; overwritten when we dip
+float m_hitStopEndReal = 0.0
+
+; ============================================================================
 ;  LIFECYCLE
 ; ============================================================================
 
@@ -110,9 +139,14 @@ event OnInit()
 endEvent
 
 ; Fired by the game when a save is loaded, so new MCM values take effect.
+; Also restores a dip left behind by a save taken mid-hit-stop: script state and
+; global values both persist in the save, so both halves of the restore survive.
 event OnPlayerLoadGame()
 	if (!IsPlayerAlias())
 		return
+	endif
+	if (m_hitStopActive)
+		EndHitStop()
 	endif
 	RefreshSettings()
 	RegisterForMenu("Mod Config")
@@ -121,13 +155,17 @@ endEvent
 
 ; "Mod Config" is SkyUI's MCM. Re-reading on close is what makes the Defer Dodge
 ; toggle take effect without loading a save, since ownership of the roll cannot
-; change while the menu is open anyway.
+; change while the menu is open anyway. Also a watchdog for hit-stop: Papyrus
+; timers pause in menu mode, so a dip could otherwise outlive its deadline.
 event OnMenuOpenCloseEvent(string asMenuName, bool abOpening)
 	if (asMenuName != "Mod Config" || abOpening)
 		return
 	endif
 	if (!IsPlayerAlias())
 		return
+	endif
+	if (m_hitStopActive)
+		EndHitStop()
 	endif
 	RefreshSettings()
 endEvent
@@ -144,6 +182,16 @@ event OnUpdate()
 		return
 	endif
 
+	; Hit-stop owns the loop while it is running: poll at ~frame rate in real
+	; time and restore the moment the deadline passes.
+	if (m_hitStopActive)
+		if (Utility.GetCurrentRealTime() < m_hitStopEndReal)
+			RegisterForSingleUpdate(HITSTOP_POLL)
+			return
+		endif
+		EndHitStop()
+	endif
+
 	if (m_deferDodge)
 		; TK Dodge RE owns the key; ERC must not poll it or it drains twice.
 		ResetDodgeInput()
@@ -158,6 +206,72 @@ event OnUpdate()
 	RegisterForSingleUpdate(UPDATE_INTERVAL)
 endEvent
 
+; ============================================================================
+;  HIT-STOP
+; ============================================================================
+
+; Resolve Skyrim's TimeScale global once. GetFormFromFile is lazy on purpose:
+; calling it from OnInit can race world load, and this is only needed on the
+; first impact anyway.
+GlobalVariable function GetTimeScaleGlobal()
+	if (m_timeScaleGlobal == none)
+		m_timeScaleGlobal = Game.GetFormFromFile(TIME_SCALE_FORM, "Skyrim.esm") as GlobalVariable
+		if (m_timeScaleGlobal == none)
+			Debug.Trace("ERC: could not resolve Skyrim.esm TimeScale (0x3A) - hit-stop disabled")
+		endif
+	endif
+	return m_timeScaleGlobal
+endFunction
+
+; Dip the world's timescale for afSeconds of REAL time, then restore.
+; A dip already in progress is left alone, so a flurry of hits produces one
+; freeze rather than stacking into a long one.
+function ApplyHitStop(float afSeconds)
+	if (!m_enableHitStop || afSeconds <= 0.0 || m_hitStopActive)
+		return
+	endif
+
+	GlobalVariable ts = GetTimeScaleGlobal()
+	if (ts == none)
+		return
+	endif
+
+	float prior = ts.GetValue()
+	if (prior <= 0.0)
+		; A non-positive timescale means something else is already messing with
+		; it (or the form is not the one we think); do not multiply garbage.
+		Debug.Trace("ERC: TimeScale is " + prior + " - skipping hit-stop")
+		return
+	endif
+
+	m_savedTimeScale = prior
+	m_hitStopActive  = true
+	m_hitStopEndReal = Utility.GetCurrentRealTime() + afSeconds
+
+	float scale = m_hitStopScale
+	if (scale < 0.05)
+		scale = 0.05
+	elseif (scale > 1.0)
+		scale = 1.0
+	endif
+
+	ts.SetValue(prior * scale)
+	RegisterForSingleUpdate(HITSTOP_POLL)
+endFunction
+
+; Restore whatever timescale preceded the dip. Idempotent, so it is safe to call
+; on load and on menu close as a watchdog against a stranded dip.
+function EndHitStop()
+	if (m_savedTimeScale > 0.0)
+		GlobalVariable ts = GetTimeScaleGlobal()
+		if (ts != none)
+			ts.SetValue(m_savedTimeScale)
+		endif
+	endif
+	m_hitStopActive  = false
+	m_hitStopEndReal = 0.0
+endFunction
+
 ; Drop any in-flight tap state. Called every update while deferring, so that
 ; re-enabling ERC's own roll mid-game cannot fire a tap recorded minutes ago.
 function ResetDodgeInput()
@@ -170,6 +284,7 @@ endFunction
 function RefreshSettings()
 	m_rollStaminaCost   = ERC_PlayerCombat.ERC_GetFloat("RollStaminaCost")
 	m_hitStopSeconds    = ERC_PlayerCombat.ERC_GetFloat("HitStopSeconds")
+	m_hitStopScale      = ERC_PlayerCombat.ERC_GetFloat("HitStopScale")
 
 	m_enableRolls       = ERC_PlayerCombat.ERC_GetBool("EnableRolls")
 	m_enableHitStop     = ERC_PlayerCombat.ERC_GetBool("EnableHitStop")
@@ -346,11 +461,16 @@ event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile,
 	if (!IsPlayerAlias())
 		return
 	endif
-	if (!m_enableGuardBreak)
-		return
-	endif
 	; Ignore fall damage and other sourceless hits.
 	if (akSource == none)
+		return
+	endif
+
+	; Impact freeze first: it is independent of the stagger tier and stays on
+	; when guard-break reactions are disabled.
+	ApplyHitStop(m_hitStopSeconds)
+
+	if (!m_enableGuardBreak)
 		return
 	endif
 
@@ -431,6 +551,3 @@ bool function ERC_HasTKDodge() global native
 
 ; Open the i-frame window for the first IframeFraction of afDurationSeconds.
 function ERC_RollStarted(float afDurationSeconds) global native
-
-; Dip timescale to HitStopScale for afSeconds, then restore.
-function ERC_TriggerHitStop(float afSeconds) global native

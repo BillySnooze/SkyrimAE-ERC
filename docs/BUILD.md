@@ -196,18 +196,18 @@ The `.lib`/`.exp` the linker drops next to the DLL are intermediates; delete the
 | `SKSEPlugin_Version` / `SKSEPlugin_Load` entry points | ✅ built against the genuine headers |
 | Papyrus native registration (`ERC_*`, class `ERC_PlayerCombat`) | ✅ built + exported |
 | Settings store + ini merge (plugin ini + MCM Helper ini) | ✅ implemented |
-| I-frame window maths (`OnRollStarted`, `InIframeWindow`) | ✅ implemented |
-| Hit-stop timing | ✅ timing implemented; applying the timescale dip is `[HOOK-2]` |
+| I-frame window maths (`OnRollStarted`, `InIframeWindow`) | ✅ implemented (fallback roll only) |
+| Hit-stop | ✅ implemented in Papyrus against the `TimeScale` global — no hook needed |
 | Per-frame `Update()` | ⚠️ needs a hook to be called (see below) |
-| Input hook / damage nullification | ⚠️ `[HOOK-1]` / `[HOOK-2]` — version-specific |
+| Input hook / i-frame damage nullification | ⚠️ `[HOOK-1]` / `[HOOK-2]` — version-specific |
 
 ### Remaining version-specific work
 
-**`[HOOK-2]` — i-frame damage nullification + hit-stop timescale.**
-`ApplyTimeScale()` in `ERCPlugin.cpp` is a marked stub. Install a hook on the
-player damage path and zero physical damage while `InIframeWindow()` is true;
-apply the timescale dip for hit-stop. With CommonLibSSE-NG this is a few lines;
-without it you need signature scans for your exact runtime.
+**`[HOOK-2]` — i-frame damage nullification.** Install a hook on the player
+damage path and zero physical damage while `InIframeWindow()` is true. With
+CommonLibSSE-NG this is a few lines; without it you need signature scans for your
+exact runtime. *(Hit-stop used to be in this bucket; it turned out not to need a
+hook at all — see `docs/SKSE-API-NOTES.md`, "Hit-stop — why it is Papyrus".)*
 
 **`[HOOK-1]` — per-frame tick + optional gamepad input.**
 `ERCPlugin::Update()` is not called by SKSE automatically. Call it from a hook
@@ -292,8 +292,10 @@ either does not appear or appears with dead controls — hence `tools/validate-m
 | Rolls never fire, no Papyrus errors | The quest alias is empty — check `sqv ERC_PlayerCombatQuest`, and that the alias is force-filled with the Player. |
 | Quest never runs, alias never fills, no log line | `Data\SEQ\EldenRingCombat.seq` is missing — a start-game-enabled quest in an `.esp` does not start without it. |
 | Tap does nothing | `DodgeKeyCode` doesn't match your bind; check the MCM value (56 = Left Alt). |
-| Rolls play but you still take damage | `[HOOK-2]` not installed — i-frames are inert without it. |
-| No hit-stop | Same: `[HOOK-2]` / `Update()` hook missing. |
+| Rolls play but you still take damage | I-frame damage nullification is `[HOOK-2]` — not implemented. In JOJ the roll's i-frames come from I-Frame Generator, not ERC. |
+| No hit-stop | Read the `ERC:` lines in `Papyrus.0.log`. `could not resolve Skyrim.esm TimeScale (0x3A)` means the global lookup failed; `TimeScale is <n> - skipping hit-stop` means something else had already zeroed it. Confirmed by hand in-game: `player.setav` style console `set timescale to 20` should restore normal speed. |
+| Hit-stop freezes but the world stays slow afterwards | A dip outlived its deadline. `EndHitStop()` runs on load and on closing the MCM as watchdogs; if it recurs, report it — the restore value is script state saved in the save file. |
+| Hit-stop feels too strong / too weak | `Hit-Stop Timescale` is relative to the global's 20.0: 0.15 = 15% speed. Raise towards 1.0 for a softer freeze. |
 
 ### Reading the first 20 lines of `Papyrus.0.log` is the fastest diagnosis
 

@@ -24,8 +24,10 @@ replaces BFCO's *player* combat while leaving damage numbers and enemy AI untouc
 - **ERC's own roll is the fallback.** On a list with no dodge framework, ERC polls
   the dodge key itself (tap = roll, hold = sprint) and drives its own clip names.
   Those names must exist in a behaviour graph — see Step 3 of the integration doc.
-- **Hit-stop on impact.** When a blow lands, both attacker and target freeze for a few
-  frames via a global timescale dip — the "impact crunch" that makes ER hits feel weighty.
+- **Hit-stop on impact.** When a blow lands on you, the world freezes for a few
+  frames via a dip of Skyrim's `TimeScale` global — the "impact crunch" that makes
+  ER hits feel weighty. No address hook: Skyrim's timescale is a writable global,
+  so this is pure Papyrus with a real-time (not game-time) deadline.
 - **4-tier hit reactions.** Incoming hits map to flinch → stagger → large stagger →
   knockdown. Tiers come from what Skyrim's `OnHit` actually reports (bash, power
   attack, sneak attack, broken block) plus your health fraction, since Papyrus
@@ -122,8 +124,15 @@ This repository contains **source code and documentation**, not prebuilt binarie
   verifies it with three independent parsers (own byte reader, esper, xEdit).
   `docs\BUILD.md` Part A documents the record and the two byte-level details that
   are easy to get wrong.
+- ✅ **Hit-stop works without a hook.** Skyrim's timescale is the global
+  `TimeScale` (`Skyrim.esm` `0x0000003A`, default 20.0) — not an INI setting, so
+  `Utility.SetINIFloat` cannot touch it, but `GlobalVariable.SetValue` can. The
+  dip's expiry is tracked in **real** time because game-time timers are stretched
+  by the dip itself. Verified against `Skyrim.esm` by parsing the record, not by
+  assumption. Triggers when you are struck; outgoing-hit hit-stop still needs a
+  combat-hit hook.
 - ⚠️ **Two version-specific hooks remain** (`[HOOK-1]` per-frame tick/gamepad,
-  `[HOOK-2]` i-frame damage nullification + timescale), because they need your
+  `[HOOK-2]` i-frame damage nullification), because they need your
   exact runtime's addresses. See `docs/SKSE-API-NOTES.md`. Note that i-frames in
   JOJ come from **IFrame Generator**, not from ERC's `[HOOK-2]`, so playable
   invincibility is already there.

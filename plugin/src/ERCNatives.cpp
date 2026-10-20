@@ -60,11 +60,6 @@ namespace
 	{
 		ERCPlugin::Get().OnRollStarted(afDurationSeconds);
 	}
-
-	void TriggerHitStopNative(StaticFunctionTag*, float afSeconds)
-	{
-		ERCPlugin::Get().TriggerHitStop(afSeconds);
-	}
 }
 
 bool ERCRegisterNatives(VMClassRegistry* registry)
@@ -93,8 +88,6 @@ bool ERCRegisterNatives(VMClassRegistry* registry)
 		"ERC_HasTKDodge", cls, HasTKdodgeNative, registry));
 	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
 		"ERC_RollStarted", cls, RollStartedNative, registry));
-	registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, float>(
-		"ERC_TriggerHitStop", cls, TriggerHitStopNative, registry));
 
 	return true;
 }

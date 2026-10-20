@@ -47,7 +47,15 @@ def skip_script(v, off):
 
 
 def main():
-    buf = ESP.read_bytes()
+    # Honour an explicit path. This used to read only ESP, so running
+    # `verify_esp.py some-other.esp` re-checked the shipped file and printed OK,
+    # which is worse than no check: it reports success for a file it never read.
+    import sys
+    target = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ESP
+    if not target.exists():
+        fail(f"no such plugin: {target}")
+    print(f"checking {target}")
+    buf = target.read_bytes()
     sig, size, flags, formid, _vc, _fv, _vc2 = tes5.HEADER.unpack_from(buf, 0)
     if sig != b"TES4":
         fail(f"expected TES4, got {sig}")
@@ -104,8 +112,14 @@ def main():
         fail(f"DNAM is {len(dnam)} bytes, expected 12")
     qflags, priority = struct.unpack_from("<HB", dnam, 0)
     print(f"DNAM: flags={qflags:#06x} priority={priority}")
-    if not qflags & 0x1:
-        fail("Start Game Enabled bit not set")
+    # Start Game Enabled is bit 0x0100 -- verified, not assumed, against
+    # Skyrim.esm: MQ101/MQ102 (which must run from game start) have DNAM 0x0100
+    # with a clean record header, while DA10/WICourier have 0x0000. Precision's
+    # MCM quest, which works in this load order, has 0x0101. Bit 0x0001 is
+    # Run Once. Getting this bit wrong is silent: the quest never starts, the
+    # alias script never runs, and the mod looks "installed but dead".
+    if not qflags & 0x0100:
+        fail("Start Game Enabled bit (0x0100) not set")
     if priority != 60:
         fail(f"priority {priority} != 60")
 

@@ -167,6 +167,18 @@ elseif (-not (Test-Path $esp)) {
     Fail 'data\EldenRingCombat.esp is missing (omit -SkipEsp to build it)'
 }
 
+# Regardless of which authoring path produced the file, repair the two defects
+# that make a quest plugin silently dead (Start Game Enabled bit, GRUP size) and
+# then prove it. Both are checked against vanilla records by the scripts, not
+# taken on trust: a wrong Start Game Enabled bit leaves the mod "installed but
+# dead", with no rolls, no hit-stop and no MCM entry, and nothing in any log.
+Step 'Repairing/verifying the quest record...'
+& py (Join-Path $PSScriptRoot 'esp\patch-quest-flags.py') $esp 2>&1 | ForEach-Object { Write-Host "        $_" }
+if ($LASTEXITCODE -ne 0) { Fail 'quest record repair failed' }
+
+& py (Join-Path $PSScriptRoot 'inspect-plugin.py') $esp 2>&1 | ForEach-Object { Write-Host "        $_" }
+if ($LASTEXITCODE -ne 0) { Fail 'plugin structure check failed' }
+
 # --- report -----------------------------------------------------------------
 $shippedPex = Join-Path $root 'data\scripts\ERC_PlayerCombat.pex'
 Step 'Done.'

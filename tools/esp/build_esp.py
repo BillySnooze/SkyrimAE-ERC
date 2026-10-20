@@ -8,10 +8,13 @@ the SKSE plugin API has no AttachScript call.
 Every layout detail below was read out of vanilla Skyrim.esm records (see
 tools/esp/dump_quest.py and find_minimal_vmad.py):
 
-  * QUST subrecord order: EDID, VMAD, FULL, DNAM, ENAM, NEXT, ANAM, then one
-    ALST block per alias.
+  * QUST subrecord order: EDID, VMAD, FULL, DNAM, NEXT, ANAM, then one
+    ALST block per alias. (Working plugins, including Precision.esp's MCM quest
+    and vanilla quests, carry no ENAM here.)
   * DNAM is 12 bytes: u16 flags, u8 priority, u8 unknown, u16 form version,
-    u16 unknown, u32 quest type. Bit 0 of the flags is "Start Game Enabled".
+    u16 unknown, u32 quest type. Flag 0x0100 is "Start Game Enabled" and
+    0x0001 is "Run Once" -- checked against Skyrim.esm, where MQ101/MQ102 (which
+    must run from game start) have 0x0100 while DA10 has 0x0000.
   * ANAM is the "next alias id" count (u32).
   * Alias block: ALST(u32 id), ALID(zstring name), FNAM(u32 flags),
     ALFR(u32 forced ref), VTCK(u32), ALED(empty). FNAM bit 9 is Allow Reserved.
@@ -29,19 +32,29 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parents[2] / "data" / "EldenRingCombat.esp"
 
 PLUGIN_NAME = "EldenRingCombat.esm"   # author field, cosmetic
-MASTER = "Skyrim.esm"
+MASTERS = ["Skyrim.esm"]
 AUTHOR = "EldenRingCombat"
 
-QUEST_FORMID = 0x00000800
+# A plugin's own records carry the index the plugin itself occupies in its own
+# master list, i.e. len(MASTERS). Getting this wrong makes every record point at
+# a master that does not exist, so the quest silently never registers -- the same
+# class of bug as a wrong Start Game Enabled bit. Checked against Precision.esp
+# (one master, records at 0x01xxxxxx) and the houseCARL-built plugin (two
+# masters, records at 0x02xxxxxx).
+SELF_INDEX = len(MASTERS)
+QUEST_FORMID = (SELF_INDEX << 24) | 0x00000800
 QUEST_EDID = "ERC_PlayerCombatQuest"
 QUEST_NAME = "Elden Ring Combat"
 SCRIPT_NAME = "ERC_PlayerCombat"
 ALIAS_NAME = "Player"
 PLAYER_REF = 0x00000014              # Skyrim.esm:00000014
 
-FLAG_START_GAME_ENABLED = 0x0001
+FLAG_START_GAME_ENABLED = 0x0100      # DNAM; verified against Skyrim.esm MQ101
+FLAG_RUN_ONCE = 0x0001                # DNAM; what MCM-style quests conventionally set
 PRIORITY = 60
-ALIAS_FLAG_ALLOW_RESERVED = 0x0200
+# A Player-forced alias needs no alias flags: Precision's working MCM quest and
+# the vanilla quests that force PlayerRef all carry FNAM 0.
+ALIAS_FLAG_ALLOW_RESERVED = 0x0000
 
 RECORD_FORM_VERSION = 44             # SSE-era record version
 
@@ -68,24 +81,49 @@ def record(sig: bytes, formid: int, data: bytes, flags: int = 0) -> bytes:
 
 
 def group(label: bytes, content: bytes) -> bytes:
-    # SSE group header is 24 bytes: size covers the header plus content.
-    return (struct.pack("<4sI4siI", b"GRUP", 24 + len(content), label, 0, 0)
+    # SSE group header is 24 bytes, and the size field counts ONLY the content.
+    # (It is not header+content: Precision.esp's QUST group sits at 0x61 with
+    # size 89, and its QUST record starts at 0x61+24+89=0xD2.) Writing
+    # header+content makes the group overrun EOF by exactly one record header.
+    return (struct.pack("<4sI4siI", b"GRUP", len(content), label, 0, 0)
             + b"\x00" * 4 + content)
 
 
 # --------------------------------------------------------------------------
 # VMAD
 # --------------------------------------------------------------------------
+# This is a byte-for-byte copy of the VMAD that the houseCARL-authored plugin
+# ships with, which xEdit confirms as "alias blocks: 1 ... script:
+# ERC_PlayerCombat" -- i.e. the alias script really is attached. Only the 4-byte
+# quest FormID inside it is substituted.
+#
+# It is copied rather than derived on purpose. The version this file used to
+# compute by hand parsed as "alias blocks: 0" in xEdit, which means the script
+# would have been attached to nothing: the mod would load, log that ERC.dll is
+# fine, and do nothing at all. Verifying a hand-derived layout against a real
+# parser is what caught it, so the safe move is to stop deriving.
+VMAD_TEMPLATE = bytes.fromhex(
+    "0500020000000200000000010000000000000800020500020001001000"
+    "4552435f506c61796572436f6d626174"
+    "000000"
+)
+VMAD_QUEST_SLOT = VMAD_TEMPLATE.find(bytes.fromhex("00080002"))
+STATIC_ASSERT_VMAD_LEN = 48
+
+
 def build_vmad(quest_formid: int, alias_index: int, script: str) -> bytes:
-    out = struct.pack("<HHH", 5, 2, 0)          # version, object format, no quest scripts
-    out += bytes([2])                            # extra bind data version
-    out += struct.pack("<H", 0)                  # fragment count
-    out += struct.pack("<H", 1)                  # alias script block count
-    out += struct.pack("<HHIHHH", 0, alias_index, quest_formid, 5, 2, 1)
-    out += wstring(script)
-    out += bytes([0])                            # script flags: local
-    out += struct.pack("<H", 0)                  # property count
-    return out
+    if len(VMAD_TEMPLATE) != STATIC_ASSERT_VMAD_LEN:
+        raise SystemExit(f"VMAD template is {len(VMAD_TEMPLATE)} bytes, expected "
+                         f"{STATIC_ASSERT_VMAD_LEN}")
+    if VMAD_QUEST_SLOT < 0 or VMAD_TEMPLATE.count(bytes.fromhex("00080002")) != 1:
+        raise SystemExit("VMAD quest FormID slot is not uniquely identifiable")
+    if alias_index != 0:
+        raise SystemExit("the validated VMAD attaches to alias 0 only")
+    if script != SCRIPT_NAME:
+        raise SystemExit(f"the validated VMAD names {SCRIPT_NAME} only")
+    out = bytearray(VMAD_TEMPLATE)
+    struct.pack_into("<I", out, VMAD_QUEST_SLOT, quest_formid)
+    return bytes(out)
 
 
 # --------------------------------------------------------------------------
@@ -97,8 +135,7 @@ def build_quest(formid: int) -> bytes:
     data += subrecord(b"VMAD", build_vmad(formid, 0, SCRIPT_NAME))
     data += subrecord(b"FULL", zstring(QUEST_NAME))
     data += subrecord(b"DNAM", struct.pack(
-        "<HBBHHI", FLAG_START_GAME_ENABLED, PRIORITY, 0, 0, 0, 0))
-    data += subrecord(b"ENAM", b"SCPT")          # generic quest event code
+        "<HBBHHI", FLAG_START_GAME_ENABLED | FLAG_RUN_ONCE, PRIORITY, 0, 0, 0, 0))
     data += subrecord(b"NEXT", b"")
     data += subrecord(b"ANAM", struct.pack("<I", 1))   # next alias id
 
@@ -120,7 +157,9 @@ def build_header(num_records: int, next_object_id: int) -> bytes:
     hedr = struct.pack("<fII", 1.7, num_records, next_object_id)
     data = subrecord(b"HEDR", hedr)
     data += subrecord(b"CNAM", zstring(AUTHOR))
-    data += subrecord(b"MAST", zstring(MASTER))
+    data += subrecord(b"MAST", zstring(MASTERS[0]))
+    for master in MASTERS[1:]:
+        data += subrecord(b"MAST", zstring(master))
     data += subrecord(b"DATA", struct.pack("<Q", 0))
     data += subrecord(b"INTV", struct.pack("<I", 1))
     # flags 0 => regular ESP (not a master, not ESL-flagged)

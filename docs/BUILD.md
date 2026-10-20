@@ -124,10 +124,11 @@ otherwise:
   order; reading the FormID first makes every block parse one field early.
 - **A VMAD that only carries a quest script still has a fragment file name.** The
   tail is `u8 bind version, u16 fragment count, wstring script file name, u16
-  alias block count` — the empty file name is a real `0000` field. Omit it and the
-  alias count is read from the wrong offset; the record becomes malformed and
-  xEdit reports it with a modal error dialog, which looks exactly like xEdit
-  hanging (no log, no sentinel, no output).
+  alias block count` — the empty file name is a real `0000` field, confirmed
+  against `Precision.esp`'s `Precision_MCM_Quest` (`02 0000 0000 0100`). Omit it
+  and the alias count is read two bytes early, so the record misparses with
+  nothing in the build to warn you; `verify_esp.py` now checks that tail
+  byte-exactly (`bind=2 fragments=0 fragment_file_len=0 alias_blocks=0`).
 
 ### Installing the plugin
 

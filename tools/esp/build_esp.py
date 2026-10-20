@@ -149,12 +149,11 @@ def build_vmad_quest_script(script: str) -> bytes:
         wstring fragment script file name   <-- present even when empty
         u16 alias block count
 
-    That file-name field is easy to miss and its absence is not caught by
-    anything at build time: the alias count then reads from the file name's
-    length word, the record is malformed, and xEdit reports it with a modal
-    error dialog -- which looks like xEdit hanging. Cross-checked against
-    Precision.esp's Precision_MCM_Quest, whose tail is
-    02 0000 0000 0100 (bind, no fragments, no file name, 1 alias block).
+    That file-name field is easy to miss. Its absence is caught by nothing at
+    build time: the alias count is then read two bytes early and the record
+    misparses silently. Cross-checked against Precision.esp's
+    Precision_MCM_Quest, whose tail is 02 0000 0000 0100 (bind, no fragments,
+    no file name, 1 alias block).
     """
     out = struct.pack("<HHH", 5, 2, 1)      # version, object format, 1 script
     out += wstring(script)

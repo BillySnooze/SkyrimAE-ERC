@@ -66,15 +66,20 @@ $argsList = @(
     '-autoexit'
 )
 
-$proc = Start-Process -FilePath $XEditPath -ArgumentList $argsList -PassThru
-
 # xEdit does not always honour -autoexit, so scripts drop a sentinel file when
 # they are finished and this harness stops xEdit itself.
+#
+# The sentinel must be cleared BEFORE the process starts. Deleting it afterwards
+# races the script: a fast script writes the sentinel in the milliseconds between
+# Start-Process and the Remove-Item, the harness then deletes the only evidence it
+# was waiting for, and sits until the timeout with a run that actually succeeded.
 if ($Sentinel) {
     if (-not [IO.Path]::IsPathRooted($Sentinel)) { $Sentinel = Join-Path $root $Sentinel }
     Remove-Item $Sentinel -Force -ErrorAction SilentlyContinue
     Write-Host "[xedit] sentinel: $Sentinel"
 }
+
+$proc = Start-Process -FilePath $XEditPath -ArgumentList $argsList -PassThru
 
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $done = $false
